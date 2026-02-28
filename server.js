@@ -1,4 +1,5 @@
 // server.js
+
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -8,13 +9,14 @@ import rateLimit from "express-rate-limit";
 import http from "http";
 import { Server } from "socket.io";
 
+import Notification from "./models/Notification.js";
+import Message from "./models/Message.js";
+
 // Routes
 import authRoutes from "./routes/auth.js";
 import itemRoutes from "./routes/itemRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
-
-// Model
-import Message from "./models/Message.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 dotenv.config();
 
@@ -26,7 +28,13 @@ const server = http.createServer(app);
 =========================== */
 
 app.use(express.json());
-app.use(cors());
+
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  })
+);
 
 app.use(
   helmet({
@@ -37,6 +45,7 @@ app.use(
 /* ===========================
    RATE LIMITING
 =========================== */
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -46,19 +55,23 @@ app.use(limiter);
 /* ===========================
    STATIC FILES
 =========================== */
+
 app.use("/uploads", express.static("uploads"));
 app.use("/uploads/profile", express.static("uploads/profile"));
 
 /* ===========================
    API ROUTES
 =========================== */
+
 app.use("/api/auth", authRoutes);
 app.use("/api/items", itemRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 /* ===========================
    TEST ENDPOINT
 =========================== */
+
 app.get("/", (req, res) => {
   res.send("Backend is running...");
 });
@@ -71,12 +84,14 @@ const io = new Server(server, {
   cors: {
     origin: "http://localhost:5173",
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
+app.set("io", io); // Make io accessible in routes/controllers via req.app.get("io")
 
 // 🔹 Store online users
-const onlineUsers = new Map(); 
-// userId => socketId
+// Map<userId, socketId>
+const onlineUsers = new Map();
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
@@ -84,37 +99,72 @@ io.on("connection", (socket) => {
   /* ===========================
      USER ONLINE
   =========================== */
-  socket.on("userOnline", (userId) => {
-    onlineUsers.set(userId, socket.id);
 
-    // Notify everyone user is online
+  socket.on("userOnline", (userId) => {
+    if (!userId) return;
+
+    onlineUsers.set(userId.toString(), socket.id);
+
     io.emit("updateOnlineUsers", Array.from(onlineUsers.keys()));
   });
 
   /* ===========================
-     JOIN CONVERSATION ROOM
+     JOIN CONVERSATION
   =========================== */
+
   socket.on("joinConversation", (conversationId) => {
-    socket.join(conversationId);
+    if (conversationId) {
+      socket.join(conversationId);
+    }
   });
 
   /* ===========================
      SEND MESSAGE
   =========================== */
+
   socket.on("sendMessage", async (data) => {
     try {
-      // Save to DB first
+      /*
+        data should contain:
+        - sender
+        - receiver
+        - conversation
+        - item
+        - text
+      */
+
+      // 1️⃣ Save message
       const message = await Message.create(data);
 
-      // Send to room (real-time)
+      // 2️⃣ Emit message to conversation room
       io.to(data.conversation).emit("receiveMessage", message);
 
-      // Optional: send directly to receiver if online
-      const receiverSocket = onlineUsers.get(data.receiver);
-      if (receiverSocket) {
-        io.to(receiverSocket).emit("newMessageNotification", message);
-      }
+      // 3️⃣ Create Notification in DB
+      const notification = await Notification.create({
+        recipient: data.receiver,
+        sender: data.sender,
+        item: data.item,
+        message: message._id,
+        isRead: false,
+      });
 
+      // 4️⃣ Populate notification BEFORE sending
+      const populatedNotification = await Notification.findById(
+        notification._id
+      )
+        .populate("sender", "name profileImage")
+        .populate("item", "title")
+        .populate("message");
+
+      // 5️⃣ Send real-time notification
+      const receiverSocket = onlineUsers.get(data.receiver.toString());
+
+      if (receiverSocket) {
+        io.to(receiverSocket).emit(
+          "newNotification",
+          populatedNotification
+        );
+      }
     } catch (error) {
       console.error("Error sending message:", error);
     }
@@ -123,10 +173,10 @@ io.on("connection", (socket) => {
   /* ===========================
      DISCONNECT
   =========================== */
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
 
-    // Remove user from online list
     for (let [userId, socketId] of onlineUsers.entries()) {
       if (socketId === socket.id) {
         onlineUsers.delete(userId);
@@ -153,6 +203,6 @@ mongoose
 
 const PORT = process.env.PORT || 5000;
 
-server.listen(PORT, () =>
-  console.log(`Server running on port ${PORT}`)
-);
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});

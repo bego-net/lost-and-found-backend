@@ -1,5 +1,64 @@
 const Message = require("../models/Message");
+const Notification = require("../models/Notification"); // ✅ ADD THIS
 const mongoose = require("mongoose");
+
+// ==========================================
+// 🚀 SEND MESSAGE + CREATE NOTIFICATION
+// POST /api/messages
+// ==========================================
+exports.sendMessage = async (req, res) => {
+  try {
+    const { itemId, receiverId, text } = req.body;
+
+    const itemObjectId = new mongoose.Types.ObjectId(itemId);
+    const receiverObjectId = new mongoose.Types.ObjectId(receiverId);
+    const senderObjectId = new mongoose.Types.ObjectId(req.user._id);
+
+    // 1️⃣ Save message
+    const newMessage = await Message.create({
+      item: itemObjectId,
+      sender: senderObjectId,
+      receiver: receiverObjectId,
+      text,
+      read: false,
+    });
+
+    // =====================================
+    // ✅ STEP 2: CREATE NOTIFICATION
+    // =====================================
+    // =====================================
+// ✅ CREATE NOTIFICATION
+// =====================================
+const notification = await Notification.create({
+  recipient: receiverObjectId,
+  sender: senderObjectId,
+  item: itemObjectId,
+  message: newMessage._id,
+  isRead: false,
+});
+
+// 🔥 VERY IMPORTANT: Populate sender
+const populatedNotification = await Notification.findById(notification._id)
+  .populate("sender", "name avatar email")
+  .populate("item", "title");
+
+// =====================================
+// ✅ EMIT REAL-TIME NOTIFICATION
+// =====================================
+if (req.io) {
+  req.io.to(receiverId.toString()).emit(
+    "newNotification",
+    populatedNotification
+  );
+}
+
+    res.status(201).json(newMessage);
+  } catch (error) {
+    console.error("Send message error:", error);
+    res.status(500).json({ message: "Failed to send message" });
+  }
+};
+
 
 // ==========================================
 // 💬 GET CONVERSATION BETWEEN 2 USERS
@@ -13,7 +72,6 @@ exports.getConversation = async (req, res) => {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const currentUserId = new mongoose.Types.ObjectId(req.user._id);
 
-    // 1️⃣ Get messages
     const messages = await Message.find({
       item: itemObjectId,
       $or: [
@@ -21,11 +79,10 @@ exports.getConversation = async (req, res) => {
         { sender: userObjectId, receiver: currentUserId },
       ],
     })
-      .populate("sender", "name avatar email")
-      .populate("receiver", "name avatar email")
+      .populate("sender", "name profileImage email")
+      .populate("receiver", "name profileImage email")
       .sort({ createdAt: 1 });
 
-    // 2️⃣ Automatically mark unread messages as read
     const result = await Message.updateMany(
       {
         item: itemObjectId,

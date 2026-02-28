@@ -1,14 +1,14 @@
 import express from "express";
 import Message from "../models/Message.js";
+import Notification from "../models/Notification.js";
 import protect from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-
-// ==========================================
-// 📩 SEND MESSAGE
-// POST /api/messages
-// ==========================================
+/* =====================================================
+   📩 SEND MESSAGE + CREATE NOTIFICATION
+   POST /api/messages
+===================================================== */
 router.post("/", protect, async (req, res) => {
   try {
     const { receiverId, itemId, content } = req.body;
@@ -19,18 +19,44 @@ router.post("/", protect, async (req, res) => {
       });
     }
 
+    // 1️⃣ Create message
     const message = await Message.create({
       sender: req.user._id,
       receiver: receiverId,
       item: itemId,
       content,
-      read: false, // 🔥 important for unread system
+      read: false,
     });
 
-    const populatedMessage = await message.populate([
-      { path: "sender", select: "name email avatar" },
-      { path: "receiver", select: "name email avatar" },
-    ]);
+    // 2️⃣ Create notification
+    const notification = await Notification.create({
+      recipient: receiverId,
+      sender: req.user._id,
+      item: itemId,
+      message: message._id,
+      isRead: false,
+    });
+
+    // 3️⃣ Populate notification properly
+    const populatedNotification = await Notification.findById(
+      notification._id
+    )
+      .populate("sender", "name email profileImage")
+      .populate("item", "title");
+
+    // 4️⃣ Emit via socket (if you attached io to app)
+    const io = req.app.get("io");
+    if (io) {
+      io.to(receiverId.toString()).emit(
+        "newNotification",
+        populatedNotification
+      );
+    }
+
+    // 5️⃣ Return populated message
+    const populatedMessage = await Message.findById(message._id)
+      .populate("sender", "name email profileImage")
+      .populate("receiver", "name email profileImage");
 
     res.status(201).json(populatedMessage);
   } catch (error) {
@@ -39,38 +65,34 @@ router.post("/", protect, async (req, res) => {
   }
 });
 
-
-// ==========================================
-// 📥 GET MESSAGES FOR SPECIFIC ITEM
-// GET /api/messages/item/:itemId
-// ==========================================
+/* =====================================================
+   📥 GET MESSAGES FOR ITEM
+   GET /api/messages/item/:itemId
+===================================================== */
 router.get("/item/:itemId", protect, async (req, res) => {
   try {
-    const { itemId } = req.params;
-
     const messages = await Message.find({
-      item: itemId,
+      item: req.params.itemId,
       $or: [
         { sender: req.user._id },
         { receiver: req.user._id },
       ],
     })
-      .populate("sender", "name email avatar")
-      .populate("receiver", "name email avatar")
+      .populate("sender", "name email profileImage")
+      .populate("receiver", "name email profileImage")
       .sort({ createdAt: 1 });
 
     res.json(messages);
   } catch (error) {
-    console.error("Fetch messages error:", error);
+    console.error("Fetch item messages error:", error);
     res.status(500).json({ message: "Failed to load messages" });
   }
 });
 
-
-// ==========================================
-// 💬 GET CONVERSATION BETWEEN 2 USERS FOR ITEM
-// GET /api/messages/conversation/:itemId/:userId
-// ==========================================
+/* =====================================================
+   💬 GET CONVERSATION BETWEEN 2 USERS FOR ITEM
+   GET /api/messages/conversation/:itemId/:userId
+===================================================== */
 router.get("/conversation/:itemId/:userId", protect, async (req, res) => {
   try {
     const { itemId, userId } = req.params;
@@ -82,28 +104,27 @@ router.get("/conversation/:itemId/:userId", protect, async (req, res) => {
         { sender: userId, receiver: req.user._id },
       ],
     })
-      .populate("sender", "name email avatar")
-      .populate("receiver", "name email avatar")
+      .populate("sender", "name email profileImage")
+      .populate("receiver", "name email profileImage")
       .sort({ createdAt: 1 });
 
     res.json(messages);
   } catch (error) {
-    console.error("Conversation fetch error:", error);
+    console.error("Conversation error:", error);
     res.status(500).json({ message: "Failed to load conversation" });
   }
 });
 
-
-// ==========================================
-// 📬 GET ALL MESSAGES FOR LOGGED USER (Inbox)
-// GET /api/messages/inbox
-// ==========================================
+/* =====================================================
+   📬 INBOX (LATEST MESSAGES RECEIVED)
+   GET /api/messages/inbox
+===================================================== */
 router.get("/inbox", protect, async (req, res) => {
   try {
     const messages = await Message.find({
       receiver: req.user._id,
     })
-      .populate("sender", "name email avatar")
+      .populate("sender", "name email profileImage")
       .populate("item", "title")
       .sort({ createdAt: -1 });
 
@@ -115,10 +136,32 @@ router.get("/inbox", protect, async (req, res) => {
 });
 
 
-// ==========================================
-// 🔴 GET TOTAL UNREAD COUNT
-// GET /api/messages/unread/count
-// ==========================================
+
+/* =====================================================
+   🔴 GET UNREAD COUNT FOR SPECIFIC USER & ITEM
+===================================================== */
+router.get("/unread/:itemId/:userId", protect, async (req, res) => {
+  try {
+    const { itemId, userId } = req.params;
+
+    const unreadCount = await Message.countDocuments({
+      item: itemId,
+      sender: userId,
+      receiver: req.user._id,
+      read: false,
+    });
+
+    res.json({ unreadCount });
+  } catch (error) {
+    console.error("Unread per conversation error:", error);
+    res.status(500).json({ message: "Failed to get unread count" });
+  }
+});
+
+
+/* =====================================================
+   🔴 GET TOTAL UNREAD COUNT
+===================================================== */
 router.get("/unread/count", protect, async (req, res) => {
   try {
     const count = await Message.countDocuments({
@@ -132,31 +175,33 @@ router.get("/unread/count", protect, async (req, res) => {
     res.status(500).json({ message: "Failed to get unread count" });
   }
 });
+/* =====================================================
+   ✅ MARK MESSAGES AS READ
+   PUT /api/messages/mark-read/:itemId/:senderId
+===================================================== */
+router.put(
+  "/mark-read/:itemId/:senderId",
+  protect,
+  async (req, res) => {
+    try {
+      const { itemId, senderId } = req.params;
 
+      await Message.updateMany(
+        {
+          item: itemId,
+          sender: senderId,
+          receiver: req.user._id,
+          read: false,
+        },
+        { read: true }
+      );
 
-// ==========================================
-// ✅ MARK MESSAGES AS READ
-// PUT /api/messages/mark-read/:itemId/:userId
-// ==========================================
-router.put("/mark-read/:itemId/:senderId", async (req, res) => {
-  try {
-    const { itemId, senderId } = req.params;
-
-    await Message.updateMany(
-      {
-        item: itemId,
-        sender: senderId,
-        receiver: req.user._id,  // current logged in user
-        read: false,
-      },
-      { read: true }
-    );
-
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Mark read error:", error);
+      res.status(500).json({ message: "Failed to mark as read" });
+    }
   }
-});
-
+);
 
 export default router;
