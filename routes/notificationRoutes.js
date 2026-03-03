@@ -2,7 +2,7 @@
 
 import express from "express";
 import Notification from "../models/Notification.js";
-import protect from "../middleware/authMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 

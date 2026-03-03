@@ -17,6 +17,7 @@ import authRoutes from "./routes/auth.js";
 import itemRoutes from "./routes/itemRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 dotenv.config();
 
@@ -64,6 +65,7 @@ app.use("/uploads/profile", express.static("uploads/profile"));
 =========================== */
 
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/items", itemRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/notifications", notificationRoutes);

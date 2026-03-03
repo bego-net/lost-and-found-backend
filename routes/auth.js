@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Item from "../models/Item.js";
-import authMiddleware from "../middleware/authMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js";
 import profileUpload from "../middleware/profileUpload.js";
 
 const router = express.Router();
@@ -27,27 +27,27 @@ router.post("/register", async (req, res) => {
       email,
       password: hashedPassword,
       profileImage: "",
+      role: "user", // default role
     });
 
     const token = jwt.sign(
-      { id: newUser._id, email: newUser.email },
+      { id: newUser._id },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    // 🔥 IMPORTANT: return flat object with token
     res.json({
       _id: newUser._id,
       name: newUser.name,
       email: newUser.email,
       profileImage: "",
+      role: newUser.role,
       token,
     });
   } catch (err) {
     res.status(500).json({ message: "Server Error", error: err.message });
   }
 });
-
 
 /* =======================================================
    LOGIN USER
@@ -57,27 +57,29 @@ router.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
-    if (!user)
+    if (!user) {
       return res
         .status(404)
         .json({ message: "User not found. Please register first." });
+    }
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match)
+    if (!match) {
       return res.status(400).json({ message: "Incorrect password" });
+    }
 
     const token = jwt.sign(
-      { id: user._id, email: user.email },
+      { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    // 🔥 IMPORTANT: return flat object with token
     res.json({
       _id: user._id,
       name: user.name,
       email: user.email,
       profileImage: user.profileImage,
+      role: user.role,
       token,
     });
   } catch (err) {
@@ -88,12 +90,14 @@ router.post("/login", async (req, res) => {
 /* =======================================================
    GET CURRENT USER PROFILE
 ======================================================= */
-router.get("/me", authMiddleware, async (req, res) => {
+router.get("/me", protect, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
+    const user = await User.findById(req.user._id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const items = await Item.find({ user: req.user.id }).sort({ createdAt: -1 });
+    const items = await Item.find({ user: req.user._id }).sort({
+      createdAt: -1,
+    });
 
     res.json({ user, items });
   } catch (err) {
@@ -104,13 +108,12 @@ router.get("/me", authMiddleware, async (req, res) => {
 /* =======================================================
    UPDATE NAME / EMAIL
 ======================================================= */
-router.put("/update", authMiddleware, async (req, res) => {
+router.put("/update", protect, async (req, res) => {
   try {
     const { name, email } = req.body;
 
-    const user = await User.findById(req.user.id);
-    if (!user)
-      return res.status(404).json({ message: "User not found" });
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     if (name) user.name = name;
     if (email) user.email = email;
@@ -120,10 +123,11 @@ router.put("/update", authMiddleware, async (req, res) => {
     res.json({
       message: "Profile updated successfully",
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
         profileImage: user.profileImage,
+        role: user.role,
       },
     });
   } catch (err) {
@@ -136,17 +140,18 @@ router.put("/update", authMiddleware, async (req, res) => {
 ======================================================= */
 router.put(
   "/update-profile-image",
-  authMiddleware,
+  protect,
   profileUpload.single("profileImage"),
   async (req, res) => {
     try {
-      if (!req.file)
+      if (!req.file) {
         return res.status(400).json({ message: "No image uploaded" });
+      }
 
       const imageUrl = `/uploads/profile/${req.file.filename}`;
 
       const updatedUser = await User.findByIdAndUpdate(
-        req.user.id,
+        req.user._id,
         { profileImage: imageUrl },
         { new: true }
       ).select("-password");

@@ -1,6 +1,6 @@
 import express from "express";
 import Item from "../models/Item.js";
-import authMiddleware from "../middleware/authMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js";
 import upload from "../middleware/upload.js";
 
 const router = express.Router();
@@ -10,7 +10,7 @@ const router = express.Router();
 ===================================================== */
 router.post(
   "/",
-  authMiddleware,
+  protect,
   upload.array("images", 5),
   async (req, res) => {
     try {
@@ -31,9 +31,8 @@ router.post(
           .json({ message: "Please fill all required fields" });
       }
 
-      const imageUrls = req.files?.map(
-        (file) => `/uploads/${file.filename}`
-      ) || [];
+      const imageUrls =
+        req.files?.map((file) => `/uploads/${file.filename}`) || [];
 
       const newItem = await Item.create({
         title,
@@ -45,7 +44,7 @@ router.post(
         longitude: longitude ? Number(longitude) : null,
         images: imageUrls,
         dateLostOrFound: dateLostOrFound || Date.now(),
-        user: req.user.id,
+        user: req.user._id, // ✅ fixed
       });
 
       res.status(201).json({
@@ -98,11 +97,11 @@ router.get("/search", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const { search, type, category, page = 1, limit = 50 } = req.query;
-    const query = {};
+    const queryObj = {};
 
     if (search) {
       const regex = new RegExp(search, "i");
-      query.$or = [
+      queryObj.$or = [
         { title: regex },
         { description: regex },
         { location: regex },
@@ -111,19 +110,19 @@ router.get("/", async (req, res) => {
     }
 
     if (type === "lost" || type === "found") {
-      query.type = type;
+      queryObj.type = type;
     }
 
-    if (category) query.category = category;
+    if (category) queryObj.category = category;
 
     const skip = (page - 1) * limit;
 
-    const items = await Item.find(query)
+    const items = await Item.find(queryObj)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
 
-    const total = await Item.countDocuments(query);
+    const total = await Item.countDocuments(queryObj);
 
     res.json({
       page: Number(page),
@@ -163,7 +162,7 @@ router.get("/:id", async (req, res) => {
 ===================================================== */
 router.put(
   "/:id",
-  authMiddleware,
+  protect,
   upload.array("images", 5),
   async (req, res) => {
     try {
@@ -173,7 +172,7 @@ router.put(
         return res.status(404).json({ message: "Item not found" });
       }
 
-      if (item.user.toString() !== req.user.id) {
+      if (item.user.toString() !== req.user._id.toString()) {
         return res.status(403).json({ message: "Unauthorized" });
       }
 
@@ -214,18 +213,17 @@ router.put(
   }
 );
 
-
 /* =====================================================
    DELETE SINGLE IMAGE
 ===================================================== */
-router.delete("/:id/image", authMiddleware, async (req, res) => {
+router.delete("/:id/image", protect, async (req, res) => {
   try {
     const { image } = req.body;
 
     const item = await Item.findById(req.params.id);
     if (!item) return res.status(404).json({ message: "Item not found" });
 
-    if (item.user.toString() !== req.user.id) {
+    if (item.user.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: "Unauthorized" });
     }
 
@@ -241,7 +239,7 @@ router.delete("/:id/image", authMiddleware, async (req, res) => {
 /* =====================================================
    DELETE ITEM
 ===================================================== */
-router.delete("/:id", authMiddleware, async (req, res) => {
+router.delete("/:id", protect, async (req, res) => {
   try {
     const item = await Item.findById(req.params.id);
 
@@ -249,7 +247,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    if (item.user.toString() !== req.user.id) {
+    if (item.user.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: "Unauthorized" });
     }
 

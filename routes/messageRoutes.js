@@ -1,7 +1,7 @@
 import express from "express";
 import Message from "../models/Message.js";
 import Notification from "../models/Notification.js";
-import protect from "../middleware/authMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js"; // ✅ IMPORTANT (named import)
 
 const router = express.Router();
 
@@ -37,14 +37,12 @@ router.post("/", protect, async (req, res) => {
       isRead: false,
     });
 
-    // 3️⃣ Populate notification properly
-    const populatedNotification = await Notification.findById(
-      notification._id
-    )
+    // 3️⃣ Populate notification
+    const populatedNotification = await Notification.findById(notification._id)
       .populate("sender", "name email profileImage")
       .populate("item", "title");
 
-    // 4️⃣ Emit via socket (if you attached io to app)
+    // 4️⃣ Emit socket notification
     const io = req.app.get("io");
     if (io) {
       io.to(receiverId.toString()).emit(
@@ -67,7 +65,6 @@ router.post("/", protect, async (req, res) => {
 
 /* =====================================================
    📥 GET MESSAGES FOR ITEM
-   GET /api/messages/item/:itemId
 ===================================================== */
 router.get("/item/:itemId", protect, async (req, res) => {
   try {
@@ -90,8 +87,7 @@ router.get("/item/:itemId", protect, async (req, res) => {
 });
 
 /* =====================================================
-   💬 GET CONVERSATION BETWEEN 2 USERS FOR ITEM
-   GET /api/messages/conversation/:itemId/:userId
+   💬 GET CONVERSATION BETWEEN 2 USERS
 ===================================================== */
 router.get("/conversation/:itemId/:userId", protect, async (req, res) => {
   try {
@@ -116,8 +112,7 @@ router.get("/conversation/:itemId/:userId", protect, async (req, res) => {
 });
 
 /* =====================================================
-   📬 INBOX (LATEST MESSAGES RECEIVED)
-   GET /api/messages/inbox
+   📬 INBOX
 ===================================================== */
 router.get("/inbox", protect, async (req, res) => {
   try {
@@ -135,10 +130,8 @@ router.get("/inbox", protect, async (req, res) => {
   }
 });
 
-
-
 /* =====================================================
-   🔴 GET UNREAD COUNT FOR SPECIFIC USER & ITEM
+   🔴 UNREAD COUNT PER CONVERSATION
 ===================================================== */
 router.get("/unread/:itemId/:userId", protect, async (req, res) => {
   try {
@@ -158,9 +151,8 @@ router.get("/unread/:itemId/:userId", protect, async (req, res) => {
   }
 });
 
-
 /* =====================================================
-   🔴 GET TOTAL UNREAD COUNT
+   🔴 TOTAL UNREAD COUNT
 ===================================================== */
 router.get("/unread/count", protect, async (req, res) => {
   try {
@@ -175,33 +167,29 @@ router.get("/unread/count", protect, async (req, res) => {
     res.status(500).json({ message: "Failed to get unread count" });
   }
 });
+
 /* =====================================================
-   ✅ MARK MESSAGES AS READ
-   PUT /api/messages/mark-read/:itemId/:senderId
+   ✅ MARK AS READ
 ===================================================== */
-router.put(
-  "/mark-read/:itemId/:senderId",
-  protect,
-  async (req, res) => {
-    try {
-      const { itemId, senderId } = req.params;
+router.put("/mark-read/:itemId/:senderId", protect, async (req, res) => {
+  try {
+    const { itemId, senderId } = req.params;
 
-      await Message.updateMany(
-        {
-          item: itemId,
-          sender: senderId,
-          receiver: req.user._id,
-          read: false,
-        },
-        { read: true }
-      );
+    await Message.updateMany(
+      {
+        item: itemId,
+        sender: senderId,
+        receiver: req.user._id,
+        read: false,
+      },
+      { read: true }
+    );
 
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Mark read error:", error);
-      res.status(500).json({ message: "Failed to mark as read" });
-    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Mark read error:", error);
+    res.status(500).json({ message: "Failed to mark as read" });
   }
-);
+});
 
 export default router;
