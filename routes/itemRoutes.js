@@ -2,6 +2,9 @@ import express from "express";
 import Item from "../models/Item.js";
 import { protect } from "../middleware/authMiddleware.js";
 import upload from "../middleware/upload.js";
+import { findMatches } from "../controllers/aiController.js";
+import Notification from "../models/Notification.js";
+import { io, onlineUsers } from "../server.js";
 
 const router = express.Router();
 
@@ -44,13 +47,76 @@ router.post(
         longitude: longitude ? Number(longitude) : null,
         images: imageUrls,
         dateLostOrFound: dateLostOrFound || Date.now(),
-        user: req.user._id, // ✅ fixed
+        user: req.user._id,
       });
+
+      /* =====================================
+         FILTER ITEMS BY CATEGORY + TYPE
+      ===================================== */
+
+      const oppositeType = newItem.type === "lost" ? "found" : "lost";
+
+      const candidateItems = await Item.find({
+        type: oppositeType,
+        category: newItem.category,
+      });
+
+      /* =====================================
+         RUN AI MATCHING
+      ===================================== */
+
+      let matches = [];
+      let notifications = [];
+
+      try {
+        const result = await findMatches(
+          newItem.toObject(),
+          candidateItems
+        );
+
+        matches = result.matches || [];
+        notifications = result.notifications || [];
+
+      } catch (aiError) {
+        console.error("AI Matching Error:", aiError);
+      }
+
+      /* =====================================
+   SAVE NOTIFICATIONS FOR MATCHED USERS
+===================================== */
+
+for (const n of notifications) {
+
+  const notification = await Notification.create({
+    receiver: n.receiver,
+    sender: req.user._id,
+    item: n.item,
+    type: "match",
+  });
+
+  const populatedNotification = await Notification.findById(notification._id)
+    .populate("sender", "name profileImage")
+    .populate("item", "title");
+
+  const receiverSocket = onlineUsers.get(n.receiver.toString());
+
+  if (receiverSocket) {
+    io.to(receiverSocket).emit("newNotification", populatedNotification);
+  }
+}
+
+      /* =====================================
+         RESPONSE
+      ===================================== */
 
       res.status(201).json({
         message: "Item posted successfully",
         item: newItem,
+        matches,
+        showNotification: notifications.length > 0,
+        notifications,
       });
+
     } catch (error) {
       console.error("Create Item Error:", error);
       res.status(500).json({

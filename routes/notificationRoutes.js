@@ -13,11 +13,11 @@ const router = express.Router();
 router.get("/", protect, async (req, res) => {
   try {
     const notifications = await Notification.find({
-      recipient: req.user._id,
+      receiver: req.user._id,
     })
-      .populate("sender", "name profileImage email") // ✅ FIXED
+      .populate("sender", "name profileImage email")
       .populate("item", "title images")
-      .populate("message") // ✅ IMPORTANT
+      .populate("message")
       .sort({ createdAt: -1 });
 
     res.json(notifications);
@@ -34,7 +34,7 @@ router.get("/", protect, async (req, res) => {
 router.get("/unread/count", protect, async (req, res) => {
   try {
     const count = await Notification.countDocuments({
-      recipient: req.user._id,
+      receiver: req.user._id,
       isRead: false,
     });
 
@@ -46,14 +46,34 @@ router.get("/unread/count", protect, async (req, res) => {
 });
 
 /* ==========================================
+   🧠 GET ONLY AI MATCH NOTIFICATIONS
+   GET /api/notifications/matches
+========================================== */
+router.get("/matches", protect, async (req, res) => {
+  try {
+    const matches = await Notification.find({
+      receiver: req.user._id,
+      type: "match",
+    })
+      .populate("sender", "name profileImage")
+      .populate("item", "title images")
+      .sort({ createdAt: -1 });
+
+    res.json(matches);
+  } catch (error) {
+    console.error("Match notifications error:", error);
+    res.status(500).json({ message: "Failed to fetch match notifications" });
+  }
+});
+
+/* ==========================================
    ✅ MARK ALL AS READ
    PUT /api/notifications/mark-all-read
-   ⚠️ MUST COME BEFORE :id ROUTE
 ========================================== */
 router.put("/mark-all-read", protect, async (req, res) => {
   try {
     await Notification.updateMany(
-      { recipient: req.user._id, isRead: false },
+      { receiver: req.user._id, isRead: false },
       { $set: { isRead: true } }
     );
 
@@ -71,7 +91,7 @@ router.put("/mark-all-read", protect, async (req, res) => {
 router.put("/:id/read", protect, async (req, res) => {
   try {
     const notification = await Notification.findOneAndUpdate(
-      { _id: req.params.id, recipient: req.user._id },
+      { _id: req.params.id, receiver: req.user._id },
       { isRead: true },
       { new: true }
     )
@@ -87,6 +107,28 @@ router.put("/:id/read", protect, async (req, res) => {
   } catch (error) {
     console.error("Mark read error:", error);
     res.status(500).json({ message: "Failed to mark as read" });
+  }
+});
+
+/* ==========================================
+   🗑 DELETE A NOTIFICATION
+   DELETE /api/notifications/:id
+========================================== */
+router.delete("/:id", protect, async (req, res) => {
+  try {
+    const notification = await Notification.findOneAndDelete({
+      _id: req.params.id,
+      receiver: req.user._id,
+    });
+
+    if (!notification) {
+      return res.status(404).json({ message: "Notification not found" });
+    }
+
+    res.json({ message: "Notification deleted" });
+  } catch (error) {
+    console.error("Delete notification error:", error);
+    res.status(500).json({ message: "Failed to delete notification" });
   }
 });
 

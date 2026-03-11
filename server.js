@@ -1,8 +1,10 @@
 // server.js
+import dotenv from "dotenv";
+dotenv.config();
 
 import express from "express";
 import mongoose from "mongoose";
-import dotenv from "dotenv";
+
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -19,7 +21,6 @@ import messageRoutes from "./routes/messageRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 
-dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
@@ -82,7 +83,7 @@ app.get("/", (req, res) => {
    SOCKET.IO SETUP
 =========================== */
 
-const io = new Server(server, {
+export const io = new Server(server, {
   cors: {
     origin: "http://localhost:5173",
     methods: ["GET", "POST"],
@@ -93,7 +94,7 @@ app.set("io", io); // Make io accessible in routes/controllers via req.app.get("
 
 // 🔹 Store online users
 // Map<userId, socketId>
-const onlineUsers = new Map();
+export const onlineUsers = new Map();
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
@@ -143,12 +144,13 @@ io.on("connection", (socket) => {
 
       // 3️⃣ Create Notification in DB
       const notification = await Notification.create({
-        recipient: data.receiver,
+        receiver: data.receiver,
         sender: data.sender,
         item: data.item,
         message: message._id,
+        type: "message",
         isRead: false,
-      });
+     });
 
       // 4️⃣ Populate notification BEFORE sending
       const populatedNotification = await Notification.findById(
@@ -159,7 +161,7 @@ io.on("connection", (socket) => {
         .populate("message");
 
       // 5️⃣ Send real-time notification
-      const receiverSocket = onlineUsers.get(data.receiver.toString());
+      const receiverSocket = onlineUsers.get(data.receiver?.toString());
 
       if (receiverSocket) {
         io.to(receiverSocket).emit(
