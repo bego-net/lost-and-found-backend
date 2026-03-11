@@ -19,7 +19,10 @@
     "mongoose": "^7.6.0",
     "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
+<<<<<<< HEAD
     "nodemailer": "^8.0.2",
+=======
+>>>>>>> 8a3967288116544d3007b6379a9e6c87c0507bf5
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
