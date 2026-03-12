@@ -1,12 +1,13 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import crypto from "crypto"; 
+import crypto from "crypto";
 import sendEmail from "../utils/sendEmail.js";
 import User from "../models/User.js";
 import Item from "../models/Item.js";
 import { protect } from "../middleware/authMiddleware.js";
 import profileUpload from "../middleware/profileUpload.js";
+import passport from "passport";
 
 const router = express.Router();
 
@@ -59,6 +60,7 @@ router.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
+
     if (!user) {
       return res
         .status(404)
@@ -66,6 +68,7 @@ router.post("/login", async (req, res) => {
     }
 
     const match = await bcrypt.compare(password, user.password);
+
     if (!match) {
       return res.status(400).json({ message: "Incorrect password" });
     }
@@ -112,12 +115,13 @@ router.post("/forgot-password", async (req, res) => {
     const resetLink = `http://localhost:5173/reset-password/${token}`;
 
     await sendEmail(
-  user.email,
-  "Password Reset",
-  `Click the link to reset your password: ${resetLink}`
-);
+      user.email,
+      "Password Reset",
+      `Click the link to reset your password: ${resetLink}`
+    );
 
-res.json({ message: "Password reset email sent" });
+    res.json({ message: "Password reset email sent" });
+
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
@@ -148,24 +152,64 @@ router.post("/reset-password/:token", async (req, res) => {
     await user.save();
 
     res.json({ message: "Password updated successfully" });
+
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
 /* =======================================================
+   GOOGLE LOGIN
+======================================================= */
+router.get(
+  "/google",
+  passport.authenticate("google", { scope: ["profile", "email"] })
+);
+
+router.get(
+  "/google/callback",
+  passport.authenticate("google", { session: false, failureRedirect: "/login" }),
+  async (req, res) => {
+    try {
+
+      const user = req.user;
+
+      // create JWT token
+      const token = jwt.sign(
+        { id: user._id },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      // redirect with token
+      res.redirect(`http://localhost:5173/oauth-success?token=${token}`);
+
+    } catch (error) {
+      res.redirect("http://localhost:5173/login");
+    }
+  }
+);
+
+
+/* =======================================================
    GET CURRENT USER PROFILE
 ======================================================= */
+
 router.get("/me", protect, async (req, res) => {
   try {
+
     const user = await User.findById(req.user._id).select("-password");
-    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     const items = await Item.find({ user: req.user._id }).sort({
       createdAt: -1,
     });
 
     res.json({ user, items });
+
   } catch (err) {
     res.status(500).json({ message: "Server Error", error: err.message });
   }
@@ -174,12 +218,17 @@ router.get("/me", protect, async (req, res) => {
 /* =======================================================
    UPDATE NAME / EMAIL
 ======================================================= */
+
 router.put("/update", protect, async (req, res) => {
   try {
+
     const { name, email } = req.body;
 
     const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     if (name) user.name = name;
     if (email) user.email = email;
@@ -196,6 +245,7 @@ router.put("/update", protect, async (req, res) => {
         role: user.role,
       },
     });
+
   } catch (err) {
     res.status(500).json({ message: "Server Error", error: err.message });
   }
@@ -204,12 +254,14 @@ router.put("/update", protect, async (req, res) => {
 /* =======================================================
    UPDATE PROFILE IMAGE
 ======================================================= */
+
 router.put(
   "/update-profile-image",
   protect,
   profileUpload.single("profileImage"),
   async (req, res) => {
     try {
+
       if (!req.file) {
         return res.status(400).json({ message: "No image uploaded" });
       }
@@ -226,6 +278,7 @@ router.put(
         message: "Profile picture updated successfully",
         user: updatedUser,
       });
+
     } catch (err) {
       res.status(500).json({ message: "Server Error", error: err.message });
     }

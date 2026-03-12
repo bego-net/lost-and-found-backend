@@ -13,19 +13,23 @@ const UserSchema = new mongoose.Schema({
     lowercase: true,
   },
 
+
   password: {
     type: String,
-    required: true,
+  },
+
+  googleId: {
+    type: String,
+  },
+
+  avatar: {
+    type: String,
   },
 
   profileImage: {
     type: String,
     default: "/uploads/default-profile.png",
   },
-
-  /* ===========================
-     👇 ADD THESE TWO FIELDS
-  =========================== */
 
   role: {
     type: String,
@@ -38,17 +42,19 @@ const UserSchema = new mongoose.Schema({
     default: false,
   },
 
+  resetToken: {
+    type: String,
+  },
+
+  resetTokenExpire: {
+    type: Date,
+  },
+
   createdAt: {
     type: Date,
     default: Date.now,
   },
-  resetToken: {
-  type: String,
-},
 
-resetTokenExpire: {
-  type: Date,
-},
-});
+}, { timestamps: true });
 
 export default mongoose.model("User", UserSchema);
