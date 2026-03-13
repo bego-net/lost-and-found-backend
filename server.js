@@ -41,7 +41,10 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173", // local frontend
+      "https://lost-and-found-frontend-tau.vercel.app", // deployed frontend
+    ],
     credentials: true,
   })
 );
@@ -107,7 +110,10 @@ app.get("/", (req, res) => {
 
 export const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "https://lost-and-found-frontend-tau.vercel.app",
+    ],
     methods: ["GET", "POST"],
     credentials: true,
   },
