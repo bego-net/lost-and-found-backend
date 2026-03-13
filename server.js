@@ -206,6 +206,20 @@ io.on("connection", (socket) => {
 });
 
 /* ===========================
+   GLOBAL ERROR HANDLER
+=========================== */
+
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+
+  if (err?.name === "MulterError") {
+    return res.status(400).json({ message: err.message });
+  }
+
+  return res.status(500).json({ message: "Server error", error: err?.message });
+});
+
+/* ===========================
    DATABASE CONNECTION
 =========================== */
 

@@ -265,6 +265,8 @@ router.put(
   profileUpload.single("profileImage"),
   async (req, res) => {
     try {
+      console.log("REQ BODY:", req.body);
+      console.log("REQ FILE:", req.file);
 
       if (!req.file) {
         return res.status(400).json({ message: "No image uploaded" });

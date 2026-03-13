@@ -30,6 +30,14 @@ function getPublicId(url) {
 ===================================================== */
 router.post("/", protect, upload.array("images", 5), async (req, res) => {
   try {
+    console.log("REQ BODY:", req.body);
+    console.log(
+      "REQ FILES:",
+      Array.isArray(req.files)
+        ? req.files.map((f) => ({ fieldname: f.fieldname, path: f.path }))
+        : req.files
+    );
+
     const {
       title,
       description,
