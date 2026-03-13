@@ -270,13 +270,11 @@ router.put(
         return res.status(400).json({ message: "No image uploaded" });
       }
 
-      const result = await cloudinary.uploader.upload(req.file.path, {
-        folder: "profile_images",
-      });
+      const imageUrl = req.file.path; // Cloudinary URL
 
       const updatedUser = await User.findByIdAndUpdate(
         req.user._id,
-        { profileImage: result.secure_url },
+        { profileImage: imageUrl },
         { new: true }
       ).select("-password");
 
