@@ -33,6 +33,15 @@ import adminRoutes from "./routes/adminRoutes.js";
 const app = express();
 const server = http.createServer(app);
 
+const corsOrigins = [
+  "http://localhost:5173", // local frontend
+  "https://lost-and-found-frontend-tau.vercel.app", // deployed frontend
+  ...(process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
+
 /* ===========================
    GLOBAL MIDDLEWARES
 =========================== */
@@ -41,17 +50,14 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173", // local frontend
-      "https://lost-and-found-frontend-tau.vercel.app", // deployed frontend
-    ],
+    origin: corsOrigins,
     credentials: true,
   })
 );
 
 app.use(
   session({
-    secret: "secret",
+    secret: process.env.SESSION_SECRET || "secret",
     resave: false,
     saveUninitialized: true,
   })
@@ -110,10 +116,7 @@ app.get("/", (req, res) => {
 
 export const io = new Server(server, {
   cors: {
-    origin: [
-      "http://localhost:5173",
-      "https://lost-and-found-frontend-tau.vercel.app",
-    ],
+    origin: corsOrigins,
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -126,6 +129,7 @@ app.set("io", io);
 =========================== */
 
 export const onlineUsers = new Map();
+app.set("onlineUsers", onlineUsers);
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
@@ -136,6 +140,7 @@ io.on("connection", (socket) => {
     if (!userId) return;
 
     onlineUsers.set(userId.toString(), socket.id);
+    socket.join(userId.toString());
 
     io.emit("updateOnlineUsers", Array.from(onlineUsers.keys()));
   });

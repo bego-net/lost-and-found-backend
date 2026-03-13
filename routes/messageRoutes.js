@@ -30,7 +30,7 @@ router.post("/", protect, async (req, res) => {
 
     // 2️⃣ Create notification
     const notification = await Notification.create({
-      recipient: receiverId,
+      receiver: receiverId,
       sender: req.user._id,
       item: itemId,
       message: message._id,

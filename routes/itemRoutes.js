@@ -4,7 +4,6 @@ import { protect } from "../middleware/authMiddleware.js";
 import upload from "../middleware/cloudUpload.js";
 import { findMatches } from "../controllers/aiController.js";
 import Notification from "../models/Notification.js";
-import { io, onlineUsers } from "../server.js";
 import cloudinary from "../config/cloudinary.js";
 
 const router = express.Router();
@@ -13,11 +12,17 @@ const router = express.Router();
    HELPER: GET CLOUDINARY PUBLIC ID
 ===================================================== */
 function getPublicId(url) {
+  if (!url) return null;
+
   const parts = url.split("/");
-  const file = parts.pop();
-  const folder = parts.pop();
-  const publicId = `${folder}/${file.split(".")[0]}`;
-  return publicId;
+  const uploadIndex = parts.findIndex((part) => part === "upload");
+
+  if (uploadIndex === -1) return null;
+
+  const publicIdWithExt = parts.slice(uploadIndex + 1).join("/");
+  const withoutVersion = publicIdWithExt.replace(/^v\d+\//, "");
+
+  return withoutVersion.replace(/\.[^/.]+$/, "");
 }
 
 /* =====================================================
@@ -87,9 +92,11 @@ router.post("/", protect, upload.array("images", 5), async (req, res) => {
         .populate("sender", "name profileImage")
         .populate("item", "title");
 
-      const receiverSocket = onlineUsers.get(n.receiver.toString());
+      const io = req.app.get("io");
+      const onlineUsers = req.app.get("onlineUsers");
+      const receiverSocket = onlineUsers?.get(n.receiver.toString());
 
-      if (receiverSocket) {
+      if (io && receiverSocket) {
         io.to(receiverSocket).emit("newNotification", populatedNotification);
       }
     }
@@ -258,7 +265,9 @@ router.delete("/:id/image", protect, async (req, res) => {
 
     const publicId = getPublicId(image);
 
-    await cloudinary.uploader.destroy(publicId);
+    if (publicId) {
+      await cloudinary.uploader.destroy(publicId);
+    }
 
     item.images = item.images.filter((img) => img !== image);
 
@@ -291,6 +300,7 @@ router.delete("/:id", protect, async (req, res) => {
     await Promise.all(
       item.images.map((image) => {
         const publicId = getPublicId(image);
+        if (!publicId) return Promise.resolve();
         return cloudinary.uploader.destroy(publicId);
       })
     );
