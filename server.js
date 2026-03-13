@@ -13,6 +13,7 @@ import { Server } from "socket.io";
 import path from "path";
 import Notification from "./models/Notification.js";
 import Message from "./models/Message.js";
+import contactRoutes from "./routes/contactRoutes.js";
 
 /* ===========================
    PASSPORT CONFIG
@@ -91,6 +92,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 
+app.use("/api", contactRoutes);
 /* ===========================
    TEST ENDPOINT
 =========================== */
