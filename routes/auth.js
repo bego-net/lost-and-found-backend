@@ -8,6 +8,7 @@ import Item from "../models/Item.js";
 import { protect } from "../middleware/authMiddleware.js";
 import profileUpload from "../middleware/profileUpload.js";
 import passport from "passport";
+import cloudinary from "../config/cloudinary.js"; // ✅ FIX: added cloudinary import
 
 const router = express.Router();
 
@@ -47,6 +48,7 @@ router.post("/register", async (req, res) => {
       role: newUser.role,
       token,
     });
+
   } catch (err) {
     res.status(500).json({ message: "Server Error", error: err.message });
   }
@@ -57,6 +59,7 @@ router.post("/register", async (req, res) => {
 ======================================================= */
 router.post("/login", async (req, res) => {
   try {
+
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
@@ -87,6 +90,7 @@ router.post("/login", async (req, res) => {
       role: user.role,
       token,
     });
+
   } catch (err) {
     res.status(500).json({ message: "Server Error", error: err.message });
   }
@@ -97,6 +101,7 @@ router.post("/login", async (req, res) => {
 ======================================================= */
 router.post("/forgot-password", async (req, res) => {
   try {
+
     const { email } = req.body;
 
     const user = await User.findOne({ email });
@@ -108,11 +113,11 @@ router.post("/forgot-password", async (req, res) => {
     const token = crypto.randomBytes(32).toString("hex");
 
     user.resetToken = token;
-    user.resetTokenExpire = Date.now() + 3600000; // 1 hour
+    user.resetTokenExpire = Date.now() + 3600000;
 
     await user.save();
 
-    const resetLink = `http://localhost:5173/reset-password/${token}`;
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${token}`; // ✅ FIX
 
     await sendEmail(
       user.email,
@@ -132,6 +137,7 @@ router.post("/forgot-password", async (req, res) => {
 ======================================================= */
 router.post("/reset-password/:token", async (req, res) => {
   try {
+
     const { password } = req.body;
 
     const user = await User.findOne({
@@ -161,6 +167,7 @@ router.post("/reset-password/:token", async (req, res) => {
 /* =======================================================
    GOOGLE LOGIN
 ======================================================= */
+
 router.get(
   "/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
@@ -174,22 +181,19 @@ router.get(
 
       const user = req.user;
 
-      // create JWT token
       const token = jwt.sign(
         { id: user._id },
         process.env.JWT_SECRET,
         { expiresIn: "7d" }
       );
 
-      // redirect with token
-      res.redirect(`http://localhost:5173/oauth-success?token=${token}`);
+      res.redirect(`${process.env.FRONTEND_URL}/oauth-success?token=${token}`); // ✅ FIX
 
     } catch (error) {
-      res.redirect("http://localhost:5173/login");
+      res.redirect(`${process.env.FRONTEND_URL}/login`);
     }
   }
 );
-
 
 /* =======================================================
    GET CURRENT USER PROFILE
@@ -252,7 +256,7 @@ router.put("/update", protect, async (req, res) => {
 });
 
 /* =======================================================
-   UPDATE PROFILE IMAGE
+   UPDATE PROFILE IMAGE (FIXED FOR CLOUDINARY)
 ======================================================= */
 
 router.put(
@@ -266,11 +270,13 @@ router.put(
         return res.status(400).json({ message: "No image uploaded" });
       }
 
-      const imageUrl = `/uploads/profile/${req.file.filename}`;
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "profile_images",
+      });
 
       const updatedUser = await User.findByIdAndUpdate(
         req.user._id,
-        { profileImage: imageUrl },
+        { profileImage: result.secure_url },
         { new: true }
       ).select("-password");
 
@@ -280,6 +286,7 @@ router.put(
       });
 
     } catch (err) {
+      console.error("Profile upload error:", err);
       res.status(500).json({ message: "Server Error", error: err.message });
     }
   }
