@@ -109,35 +109,3 @@ export const replyMessage = async (req, res) => {
   }
 };
 
-
-/* =========================================
-   ADMIN REPLY TO USER
-========================================= */
-export const replyMessage = async (req, res) => {
-  try {
-
-    const { email, reply } = req.body;
-
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-  user: process.env.EMAIL_USER,
-  pass: process.env.EMAIL_PASS
-}
-    });
-
-    await transporter.sendMail({
-  from: process.env.EMAIL_USER,
-  to: email,
-  subject: "Reply from FoundFlow Support",
-  text: reply
-});
-
-    res.json({ message: "Reply sent successfully" });
-
-  } catch (error) {
-
-    res.status(500).json({ error: "Failed to send reply" });
-
-  }
-};
