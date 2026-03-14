@@ -6,9 +6,10 @@ import sendEmail from "../utils/sendEmail.js";
 import User from "../models/User.js";
 import Item from "../models/Item.js";
 import { protect } from "../middleware/authMiddleware.js";
-import profileUpload from "../middleware/profileUpload.js";
+import upload from "../middleware/upload.js";
+import { uploadProfileImage } from "../controllers/userController.js";
 import passport from "passport";
-import cloudinary from "../config/cloudinary.js"; // ✅ FIX: added cloudinary import
+ 
 
 const router = express.Router();
 
@@ -262,34 +263,8 @@ router.put("/update", protect, async (req, res) => {
 router.put(
   "/update-profile-image",
   protect,
-  profileUpload.single("profileImage"),
-  async (req, res) => {
-    try {
-      console.log("REQ BODY:", req.body);
-      console.log("REQ FILE:", req.file);
-
-      if (!req.file) {
-        return res.status(400).json({ message: "No image uploaded" });
-      }
-
-      const imageUrl = req.file.path; // Cloudinary URL
-
-      const updatedUser = await User.findByIdAndUpdate(
-        req.user._id,
-        { profileImage: imageUrl },
-        { new: true }
-      ).select("-password");
-
-      res.json({
-        message: "Profile picture updated successfully",
-        user: updatedUser,
-      });
-
-    } catch (err) {
-      console.error("Profile upload error:", err);
-      res.status(500).json({ message: "Server Error", error: err.message });
-    }
-  }
+  upload.single("profileImage"),
+  uploadProfileImage
 );
 
 export default router;

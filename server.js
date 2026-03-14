@@ -25,6 +25,7 @@ import "./config/passport.js";
 =========================== */
 
 import authRoutes from "./routes/auth.js";
+import userRoutes from "./routes/userRoutes.js";
 import itemRoutes from "./routes/itemRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
@@ -47,6 +48,8 @@ const corsOrigins = [
 =========================== */
 
 app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 app.use(
   cors({
@@ -97,6 +100,7 @@ app.use("/uploads/profile", express.static("uploads/profile"));
 =========================== */
 
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/items", itemRoutes);
 app.use("/api/messages", messageRoutes);
