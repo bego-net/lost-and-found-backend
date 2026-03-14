@@ -21,6 +21,15 @@ function quickSimilarity(text1, text2) {
 export async function compareItems(newItemText, items) {
 
   try {
+    const apiKey =
+      process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+
+    if (!apiKey) {
+      console.log(
+        "AI compareItems skipped: OPENROUTER_API_KEY/OPENAI_API_KEY not set."
+      );
+      return [];
+    }
 
     /* =====================================
        STEP 1: Pre-filter before AI
@@ -89,7 +98,7 @@ Return ONLY JSON array like this:
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

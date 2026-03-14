@@ -53,7 +53,11 @@ router.post("/", protect, upload.array("images", 5), async (req, res) => {
       return res.status(400).json({ message: "Please fill all required fields" });
     }
 
-    const imageUrls = req.files?.map((file) => file.path) || [];
+    const imageUrls = Array.isArray(req.files)
+      ? req.files
+          .map((file) => file?.path)
+          .filter((path) => typeof path === "string" && path.length > 0)
+      : [];
 
     const newItem = await Item.create({
       title,
@@ -68,23 +72,29 @@ router.post("/", protect, upload.array("images", 5), async (req, res) => {
       user: req.user._id,
     });
 
-    /* MATCH OPPOSITE TYPE ITEMS */
-    const oppositeType = newItem.type === "lost" ? "found" : "lost";
-
-    const candidateItems = await Item.find({
-      type: oppositeType,
-      category: newItem.category,
-    });
-
+    /* MATCH OPPOSITE TYPE ITEMS (AI OPTIONAL) */
+    const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
     let matches = [];
     let notifications = [];
 
-    try {
-      const result = await findMatches(newItem.toObject(), candidateItems);
-      matches = result.matches || [];
-      notifications = result.notifications || [];
-    } catch (aiError) {
-      console.error("AI Matching Error:", aiError);
+    if (!hasOpenAiKey) {
+      console.log("AI matching disabled: OPENAI_API_KEY is not set.");
+    } else {
+      const oppositeType = newItem.type === "lost" ? "found" : "lost";
+
+      try {
+        const candidateItems = await Item.find({
+          type: oppositeType,
+          category: newItem.category,
+        });
+
+        const result = await findMatches(newItem.toObject(), candidateItems);
+        matches = result.matches || [];
+        notifications = result.notifications || [];
+      } catch (aiError) {
+        console.error("AI Matching Error:", aiError);
+        console.log("Continuing without AI matches due to error.");
+      }
     }
 
     /* SAVE NOTIFICATIONS */

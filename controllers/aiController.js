@@ -2,6 +2,15 @@ import { compareItems } from "../services/aiService.js";
 
 export const findMatches = async (newItem, itemsToCompare) => {
   try {
+    const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
+    const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY);
+
+    if (!hasOpenAiKey && !hasOpenRouterKey) {
+      console.log(
+        "AI matching skipped: OPENAI_API_KEY/OPENROUTER_API_KEY not set."
+      );
+      return { matches: [], notifications: [] };
+    }
 
     if (!itemsToCompare || !itemsToCompare.length) {
       return { matches: [], notifications: [] };
