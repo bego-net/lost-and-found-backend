@@ -1,5 +1,7 @@
 import path from "path";
 import Item from "../models/Item.js";
+import Notification from "../models/Notification.js";
+import { findMatches } from "./aiController.js";
 
 function toPublicPath(filePath) {
   if (!filePath) return null;
@@ -80,9 +82,56 @@ export const createItem = async (req, res) => {
       user: req.user._id,
     });
 
+    let matches = [];
+    let notifications = [];
+
+    try {
+      const oppositeType = newItem.type === "lost" ? "found" : "lost";
+
+      const candidateItems = await Item.find({
+        type: oppositeType,
+        category: newItem.category,
+      });
+
+      const result = await findMatches(newItem.toObject(), candidateItems);
+
+      matches = result?.matches || [];
+      notifications = result?.notifications || [];
+    } catch (aiError) {
+      console.error("AI Matching Error:", aiError);
+    }
+
+    for (const n of notifications) {
+      const notification = await Notification.create({
+        receiver: n.receiver,
+        sender: req.user._id,
+        item: newItem._id,
+        type: "match",
+        isRead: false,
+      });
+
+      const populatedNotification = await Notification.findById(
+        notification._id
+      )
+        .populate("sender", "name profileImage")
+        .populate("item", "title images");
+
+      const io = req.app.get("io");
+      const onlineUsers = req.app.get("onlineUsers");
+
+      const receiverSocket = onlineUsers?.get(n.receiver?.toString());
+
+      if (io && receiverSocket) {
+        io.to(receiverSocket).emit("newNotification", populatedNotification);
+      }
+    }
+
     res.status(201).json({
       message: "Item posted successfully",
       item: newItem,
+      matches,
+      showNotification: notifications.length > 0,
+      notifications,
     });
   } catch (error) {
     console.error("Create Item Error:", error);

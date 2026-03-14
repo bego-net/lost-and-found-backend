@@ -105,9 +105,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/items", itemRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/notifications", notificationRoutes);
-
-
-app.use("/api", contactRoutes);
+app.use("/api/contact", contactRoutes);
 /* ===========================
    TEST ENDPOINT
 =========================== */

@@ -3,6 +3,7 @@ import { protect } from "../middleware/authMiddleware.js";
 import { adminOnly } from "../middleware/adminMiddleware.js";
 import { getAdminStats } from "../controllers/adminController.js";
 import { unbanUser } from "../controllers/adminController.js";
+import { getMessages, replyMessage } from "../controllers/contactController.js";
 import {
   getAllUsers,
   deleteUser,
@@ -23,5 +24,9 @@ router.put("/users/unban/:id", protect, adminOnly, unbanUser);
 router.get("/items", protect, adminOnly, getAllItems);
 router.delete("/items/:id", protect, adminOnly, deleteItem);
 router.get("/stats", protect, adminOnly, getAdminStats);
+
+/* CONTACT MESSAGE ROUTES */
+router.get("/messages", protect, adminOnly, getMessages);
+router.post("/reply", protect, adminOnly, replyMessage);
 
 export default router;

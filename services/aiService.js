@@ -9,26 +9,54 @@ dotenv.config();
 ========================================== */
 
 function quickSimilarity(text1, text2) {
+  const words1 = text1.toLowerCase().split(/\s+/).filter(Boolean);
+  const words2 = text2.toLowerCase().split(/\s+/).filter(Boolean);
 
-  const words1 = text1.toLowerCase().split(/\s+/);
-  const words2 = text2.toLowerCase().split(/\s+/);
+  if (!words1.length || !words2.length) return 0;
 
-  const common = words1.filter((w) => words2.includes(w));
+  const set2 = new Set(words2);
+  const common = words1.filter((w) => set2.has(w));
 
   return common.length / Math.max(words1.length, words2.length);
 }
 
-export async function compareItems(newItemText, items) {
+function computeSimilarityScore(newItem, item) {
+  const titleDesc1 = `${newItem.title} ${newItem.description}`.trim();
+  const titleDesc2 = `${item.title} ${item.description}`.trim();
+  const location1 = `${newItem.location || ""}`.trim();
+  const location2 = `${item.location || ""}`.trim();
+
+  const titleDescScore = quickSimilarity(titleDesc1, titleDesc2);
+  const locationScore = quickSimilarity(location1, location2);
+  const categoryScore = newItem.category === item.category ? 1 : 0;
+  const typeScore = newItem.type !== item.type ? 1 : 0;
+
+  const weighted =
+    titleDescScore * 0.5 +
+    locationScore * 0.2 +
+    categoryScore * 0.2 +
+    typeScore * 0.1;
+
+  return Math.round(weighted * 100);
+}
+
+export async function compareItems(newItem, items) {
 
   try {
     const apiKey =
       process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
-      console.log(
-        "AI compareItems skipped: OPENROUTER_API_KEY/OPENAI_API_KEY not set."
-      );
-      return [];
+      const scored = items
+        .map((item, index) => ({
+          index,
+          similarity: computeSimilarityScore(newItem, item),
+        }))
+        .filter((result) => result.similarity > 0)
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, 5);
+
+      return scored;
     }
 
     /* =====================================
@@ -37,12 +65,12 @@ export async function compareItems(newItemText, items) {
     ===================================== */
 
     const filtered = items.filter((item) => {
-
-      const itemText = `${item.title} ${item.description} ${item.location}`;
+      const itemText = `${item.title} ${item.description} ${item.category} ${item.location} ${item.type}`;
+      const newItemText = `${newItem.title} ${newItem.description} ${newItem.category} ${newItem.location} ${newItem.type}`;
 
       const score = quickSimilarity(newItemText, itemText);
 
-      return score > 0.1; // small threshold
+      return score > 0.1;
     });
 
     /* Limit items sent to AI */
@@ -59,7 +87,7 @@ export async function compareItems(newItemText, items) {
     const formattedItems = itemsToSend
       .map(
         (item, index) =>
-          `${index}. Title: ${item.title}, Description: ${item.description}, Location: ${item.location}`
+          `${index}. Title: ${item.title}, Description: ${item.description}, Category: ${item.category}, Location: ${item.location}, Type: ${item.type}`
       )
       .join("\n");
 
@@ -68,7 +96,7 @@ You are an AI that compares lost-and-found items.
 
 A new item was posted:
 
-"${newItemText}"
+"${newItem.title} ${newItem.description} ${newItem.category} ${newItem.location} ${newItem.type}"
 
 Compare it with the following items and estimate similarity.
 
@@ -115,9 +143,7 @@ Return ONLY JSON array like this:
     );
 
     if (!response.ok) {
-
       console.error("OpenRouter API error");
-
       return [];
     }
 

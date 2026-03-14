@@ -21,6 +21,15 @@ const contactMessageSchema = new mongoose.Schema(
       type: String,
       enum: ["unread", "read"],
       default: "unread"
+    },
+
+    reply: {
+      type: String,
+      default: ""
+    },
+
+    repliedAt: {
+      type: Date
     }
   },
   { timestamps: true }

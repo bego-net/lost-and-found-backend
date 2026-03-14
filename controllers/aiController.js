@@ -2,16 +2,6 @@ import { compareItems } from "../services/aiService.js";
 
 export const findMatches = async (newItem, itemsToCompare) => {
   try {
-    const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
-    const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY);
-
-    if (!hasOpenAiKey && !hasOpenRouterKey) {
-      console.log(
-        "AI matching skipped: OPENAI_API_KEY/OPENROUTER_API_KEY not set."
-      );
-      return { matches: [], notifications: [] };
-    }
-
     if (!itemsToCompare || !itemsToCompare.length) {
       return { matches: [], notifications: [] };
     }
@@ -35,11 +25,7 @@ export const findMatches = async (newItem, itemsToCompare) => {
        STEP 2: Build text for AI
     ===================================== */
 
-    const newItemText = `${newItem.title} ${newItem.description} ${newItem.category} ${newItem.location}`;
-
-    console.log("New Item Text:", newItemText);
-
-    const aiResults = await compareItems(newItemText, filteredItems);
+    const aiResults = await compareItems(newItem, filteredItems);
 
     console.log("AI Results:", aiResults);
 

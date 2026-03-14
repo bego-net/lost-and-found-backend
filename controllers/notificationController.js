@@ -1,16 +1,16 @@
-const Notification = require("../models/Notification");
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
+import Notification from "../models/Notification.js";
 
 // ==========================================
 // 🔔 GET USER NOTIFICATIONS
 // GET /api/notifications
 // ==========================================
-exports.getNotifications = async (req, res) => {
+export const getNotifications = async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.user._id);
 
     const notifications = await Notification.find({
-      recipient: userId,
+      receiver: userId,
     })
       .populate("sender", "name profileImage email")
       .populate("item", "_id title")
@@ -27,7 +27,7 @@ exports.getNotifications = async (req, res) => {
 // ✅ MARK NOTIFICATION AS READ
 // PUT /api/notifications/:id/read
 // ==========================================
-exports.markAsRead = async (req, res) => {
+export const markAsRead = async (req, res) => {
   try {
     const notification = await Notification.findByIdAndUpdate(
       req.params.id,
