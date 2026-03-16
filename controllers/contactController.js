@@ -2,10 +2,24 @@ import ContactMessage from "../models/ContactMessage.js";
 import nodemailer from "nodemailer";
 
 /* =========================================
+   CREATE MAIL TRANSPORTER (GLOBAL)
+========================================= */
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+/* =========================================
    SEND CONTACT MESSAGE (USER)
 ========================================= */
+
 export const sendContactMessage = async (req, res) => {
   try {
+
     const { name, email, message } = req.body;
 
     if (!name || !email || !message) {
@@ -18,57 +32,52 @@ export const sendContactMessage = async (req, res) => {
     const newMessage = new ContactMessage({
       name,
       email,
-      message
+      message,
+      status: "unread"
     });
 
     await newMessage.save();
 
-    let emailSent = false;
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const transporter = nodemailer.createTransport({
-          service: "gmail",
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
+    // SEND RESPONSE IMMEDIATELY
+    res.json({
+      message: "Message sent successfully",
+      contactId: newMessage._id,
+    });
 
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: process.env.EMAIL_USER,
-          subject: "New Contact Message",
-          text: `
+    // SEND EMAIL TO ADMIN IN BACKGROUND
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+
+      transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: process.env.EMAIL_USER,
+        subject: "New Contact Message",
+        text: `
+New contact message received
+
 Name: ${name}
 Email: ${email}
 
 Message:
 ${message}
-`,
-        });
+        `,
+      })
+      .then(() => console.log("Contact email sent"))
+      .catch(err => console.error("Contact email failed:", err));
 
-        emailSent = true;
-      } catch (mailError) {
-        console.error("Contact email failed:", mailError);
-      }
     }
 
-    res.json({
-      message: "Message sent successfully",
-      emailSent,
-      contactId: newMessage._id,
-    });
-
   } catch (error) {
+
     console.error(error);
     res.status(500).json({ error: "Failed to send message" });
+
   }
 };
-
 
 /* =========================================
    GET ALL CONTACT MESSAGES (ADMIN)
 ========================================= */
+
 export const getMessages = async (req, res) => {
   try {
 
@@ -80,6 +89,7 @@ export const getMessages = async (req, res) => {
 
   } catch (error) {
 
+    console.error(error);
     res.status(500).json({ error: "Failed to fetch messages" });
 
   }
@@ -88,13 +98,17 @@ export const getMessages = async (req, res) => {
 /* =========================================
    ADMIN REPLY TO MESSAGE
 ========================================= */
+
 export const replyMessage = async (req, res) => {
   try {
+
     const { messageId, id, reply } = req.body;
     const targetId = messageId || id;
 
     if (!targetId || !reply) {
-      return res.status(400).json({ error: "messageId and reply are required" });
+      return res.status(400).json({
+        error: "messageId and reply are required"
+      });
     }
 
     const message = await ContactMessage.findById(targetId);
@@ -103,39 +117,45 @@ export const replyMessage = async (req, res) => {
       return res.status(404).json({ error: "Message not found" });
     }
 
-    message.status = "read";
+    // Update message
+    message.status = "replied";
     message.reply = reply;
     message.repliedAt = new Date();
+
     await message.save();
 
-    let emailSent = false;
+    // SEND RESPONSE IMMEDIATELY
+    res.json({
+      message: "Reply sent successfully"
+    });
+
+    // SEND EMAIL TO USER IN BACKGROUND
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const transporter = nodemailer.createTransport({
-          service: "gmail",
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
 
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: message.email,
-          subject: "Re: Your contact message",
-          text: reply,
-        });
+      transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: message.email,
+        subject: "Reply from FoundLost Support",
+        text: `
+Hello ${message.name},
 
-        emailSent = true;
-      } catch (mailError) {
-        console.error("Reply email failed:", mailError);
-      }
+Thank you for contacting FoundLost.
+
+${reply}
+
+Best regards,
+FoundLost Support Team
+        `,
+      })
+      .then(() => console.log("Reply email sent"))
+      .catch(err => console.error("Reply email failed:", err));
+
     }
 
-    res.json({ message: "Reply sent successfully", emailSent });
   } catch (error) {
+
     console.error(error);
     res.status(500).json({ error: "Failed to send reply" });
+
   }
 };
-
