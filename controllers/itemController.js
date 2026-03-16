@@ -5,6 +5,9 @@ import { findMatches } from "./aiController.js";
 
 function toPublicPath(filePath) {
   if (!filePath) return null;
+  if (/^https?:\/\//i.test(filePath)) {
+    return filePath;
+  }
   const normalized = filePath.replace(/\\/g, "/");
   if (normalized.startsWith("uploads/")) {
     return `/${normalized}`;

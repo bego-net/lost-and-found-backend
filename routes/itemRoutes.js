@@ -2,15 +2,26 @@ import express from "express";
 import fs from "fs";
 import Item from "../models/Item.js";
 import { protect } from "../middleware/authMiddleware.js";
-import upload from "../middleware/upload.js";
+import cloudUpload from "../middleware/cloudUpload.js";
 import { createItem, normalizeImagePath } from "../controllers/itemController.js";
 
 const router = express.Router();
 
+function toPublicImagePath(filePath) {
+  if (!filePath) return null;
+  if (/^https?:\/\//i.test(filePath)) return filePath;
+  const normalized = filePath.replace(/\\/g, "/");
+  if (normalized.startsWith("uploads/")) return `/${normalized}`;
+  if (normalized.includes("/uploads/")) {
+    return normalized.slice(normalized.indexOf("/uploads/"));
+  }
+  return normalized.startsWith("/") ? normalized : `/${normalized}`;
+}
+
 /* =====================================================
    CREATE ITEM
 ===================================================== */
-router.post("/", protect, upload.array("images", 5), createItem);
+router.post("/", protect, cloudUpload.array("images", 5), createItem);
 
 /* =====================================================
    SEARCH ITEMS
@@ -115,7 +126,7 @@ router.get("/:id", async (req, res) => {
 /* =====================================================
    UPDATE ITEM
 ===================================================== */
-router.put("/:id", protect, upload.array("images", 5), async (req, res) => {
+router.put("/:id", protect, cloudUpload.array("images", 5), async (req, res) => {
   try {
     const item = await Item.findById(req.params.id);
 
@@ -127,31 +138,24 @@ router.put("/:id", protect, upload.array("images", 5), async (req, res) => {
       return res.status(403).json({ message: "Unauthorized" });
     }
 
-    let images = item.images;
+    const updateData = {
+      ...req.body,
+      latitude: req.body.latitude ? Number(req.body.latitude) : item.latitude,
+      longitude: req.body.longitude ? Number(req.body.longitude) : item.longitude,
+    };
+
+    delete updateData.images;
 
     if (req.files && req.files.length > 0) {
-      images = req.files
-        .map((file) => file?.path?.replace(/\\/g, "/"))
-        .map((filePath) =>
-          filePath?.startsWith("uploads/") ? `/${filePath}` : filePath
-        )
-        .filter(Boolean);
+      updateData.images = req.files
+        .map((file) => toPublicImagePath(file?.path))
+        .filter((url) => typeof url === "string" && url.length > 0);
     }
 
-    const updatedItem = await Item.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...req.body,
-        latitude: req.body.latitude
-          ? Number(req.body.latitude)
-          : item.latitude,
-        longitude: req.body.longitude
-          ? Number(req.body.longitude)
-          : item.longitude,
-        images,
-      },
-      { new: true, runValidators: true }
-    );
+    const updatedItem = await Item.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+      runValidators: true,
+    });
 
     res.json({
       message: "Item updated successfully",
