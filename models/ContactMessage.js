@@ -19,7 +19,7 @@ const contactMessageSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["unread", "read"],
+      enum: ["unread", "read", "replied"],
       default: "unread"
     },
 
