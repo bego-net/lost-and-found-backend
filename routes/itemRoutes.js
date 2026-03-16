@@ -2,10 +2,18 @@ import express from "express";
 import fs from "fs";
 import Item from "../models/Item.js";
 import { protect } from "../middleware/authMiddleware.js";
+import upload from "../middleware/upload.js";
 import cloudUpload from "../middleware/cloudUpload.js";
 import { createItem, normalizeImagePath } from "../controllers/itemController.js";
 
 const router = express.Router();
+
+const hasCloudinaryConfig =
+  Boolean(process.env.CLOUDINARY_CLOUD_NAME) &&
+  Boolean(process.env.CLOUDINARY_API_KEY) &&
+  Boolean(process.env.CLOUDINARY_API_SECRET);
+
+const itemUpload = hasCloudinaryConfig ? cloudUpload : upload;
 
 function toPublicImagePath(filePath) {
   if (!filePath) return null;
@@ -21,7 +29,7 @@ function toPublicImagePath(filePath) {
 /* =====================================================
    CREATE ITEM
 ===================================================== */
-router.post("/", protect, cloudUpload.array("images", 5), createItem);
+router.post("/", protect, itemUpload.array("images", 5), createItem);
 
 /* =====================================================
    SEARCH ITEMS
@@ -126,7 +134,7 @@ router.get("/:id", async (req, res) => {
 /* =====================================================
    UPDATE ITEM
 ===================================================== */
-router.put("/:id", protect, cloudUpload.array("images", 5), async (req, res) => {
+router.put("/:id", protect, itemUpload.array("images", 5), async (req, res) => {
   try {
     const item = await Item.findById(req.params.id);
 

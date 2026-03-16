@@ -6,8 +6,18 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: "lostfound_items",
-    allowed_formats: ["jpg", "png", "jpeg"],
-    resource_type: "image"
+    allowed_formats: [
+      "jpg",
+      "jpeg",
+      "png",
+      "webp",
+      "gif",
+      "bmp",
+      "tiff",
+      "heic",
+      "heif"
+    ],
+    resource_type: "image",
   }
 });
 
