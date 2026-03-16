@@ -1,17 +1,11 @@
 import ContactMessage from "../models/ContactMessage.js";
-import nodemailer from "nodemailer";
+import sgMail from "@sendgrid/mail";
 
 /* =========================================
-   CREATE MAIL TRANSPORTER (GLOBAL)
+   CONFIGURE SENDGRID
 ========================================= */
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 /* =========================================
    SEND CONTACT MESSAGE (USER)
@@ -19,7 +13,6 @@ const transporter = nodemailer.createTransport({
 
 export const sendContactMessage = async (req, res) => {
   try {
-
     const { name, email, message } = req.body;
 
     if (!name || !email || !message) {
@@ -33,23 +26,25 @@ export const sendContactMessage = async (req, res) => {
       name,
       email,
       message,
-      status: "unread"
+      status: "unread",
     });
 
     await newMessage.save();
 
-    // SEND RESPONSE IMMEDIATELY
+    // Send response immediately
     res.json({
       message: "Message sent successfully",
       contactId: newMessage._id,
     });
 
-    // SEND EMAIL TO ADMIN IN BACKGROUND
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    /* =========================================
+       SEND EMAIL TO ADMIN (BACKGROUND)
+    ========================================= */
 
-      transporter.sendMail({
-        from: process.env.EMAIL_USER,
+    if (process.env.SENDGRID_API_KEY) {
+      const msg = {
         to: process.env.EMAIL_USER,
+        from: process.env.EMAIL_USER,
         subject: "New Contact Message",
         text: `
 New contact message received
@@ -60,17 +55,16 @@ Email: ${email}
 Message:
 ${message}
         `,
-      })
-      .then(() => console.log("Contact email sent"))
-      .catch(err => console.error("Contact email failed:", err));
+      };
 
+      sgMail
+        .send(msg)
+        .then(() => console.log("Contact email sent"))
+        .catch((err) => console.error("Contact email failed:", err));
     }
-
   } catch (error) {
-
     console.error(error);
     res.status(500).json({ error: "Failed to send message" });
-
   }
 };
 
@@ -80,18 +74,12 @@ ${message}
 
 export const getMessages = async (req, res) => {
   try {
-
-    const messages = await ContactMessage
-      .find()
-      .sort({ createdAt: -1 });
+    const messages = await ContactMessage.find().sort({ createdAt: -1 });
 
     res.json(messages);
-
   } catch (error) {
-
     console.error(error);
     res.status(500).json({ error: "Failed to fetch messages" });
-
   }
 };
 
@@ -101,13 +89,12 @@ export const getMessages = async (req, res) => {
 
 export const replyMessage = async (req, res) => {
   try {
-
     const { messageId, id, reply } = req.body;
     const targetId = messageId || id;
 
     if (!targetId || !reply) {
       return res.status(400).json({
-        error: "messageId and reply are required"
+        error: "messageId and reply are required",
       });
     }
 
@@ -124,17 +111,19 @@ export const replyMessage = async (req, res) => {
 
     await message.save();
 
-    // SEND RESPONSE IMMEDIATELY
+    // Send response immediately
     res.json({
-      message: "Reply sent successfully"
+      message: "Reply sent successfully",
     });
 
-    // SEND EMAIL TO USER IN BACKGROUND
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    /* =========================================
+       SEND EMAIL TO USER (BACKGROUND)
+    ========================================= */
 
-      transporter.sendMail({
-        from: process.env.EMAIL_USER,
+    if (process.env.SENDGRID_API_KEY) {
+      const msg = {
         to: message.email,
+        from: process.env.EMAIL_USER,
         subject: "Reply from FoundLost Support",
         text: `
 Hello ${message.name},
@@ -146,16 +135,15 @@ ${reply}
 Best regards,
 FoundLost Support Team
         `,
-      })
-      .then(() => console.log("Reply email sent"))
-      .catch(err => console.error("Reply email failed:", err));
+      };
 
+      sgMail
+        .send(msg)
+        .then(() => console.log("Reply email sent"))
+        .catch((err) => console.error("Reply email failed:", err));
     }
-
   } catch (error) {
-
     console.error(error);
     res.status(500).json({ error: "Failed to send reply" });
-
   }
 };
