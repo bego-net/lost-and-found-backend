@@ -7,8 +7,16 @@ import User from "../models/User.js";
 import Item from "../models/Item.js";
 import { protect } from "../middleware/authMiddleware.js";
 import upload from "../middleware/upload.js";
+import profileUpload from "../middleware/profileUpload.js";
 import { uploadProfileImage } from "../controllers/userController.js";
 import passport from "passport";
+
+const hasCloudinaryConfig =
+  Boolean(process.env.CLOUDINARY_CLOUD_NAME) &&
+  Boolean(process.env.CLOUDINARY_API_KEY) &&
+  Boolean(process.env.CLOUDINARY_API_SECRET);
+
+const profileImageUploadMiddleware = hasCloudinaryConfig ? profileUpload : upload;
  
 
 const router = express.Router();
@@ -263,7 +271,7 @@ router.put("/update", protect, async (req, res) => {
 router.put(
   "/update-profile-image",
   protect,
-  upload.single("profileImage"),
+  profileImageUploadMiddleware.single("profileImage"),
   uploadProfileImage
 );
 
