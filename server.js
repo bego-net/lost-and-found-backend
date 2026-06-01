@@ -164,7 +164,18 @@ io.on("connection", (socket) => {
 
       const message = await Message.create(data);
 
-      io.to(data.conversation).emit("receiveMessage", message);
+      const populatedMessage = await Message.findById(message._id)
+        .populate("sender", "name email profileImage")
+        .populate("receiver", "name email profileImage")
+        .populate("item", "title images");
+
+      io.to(data.conversation).emit("receiveMessage", populatedMessage);
+      if (data.receiver) {
+        io.to(data.receiver.toString()).emit("receiveMessage", populatedMessage);
+      }
+      if (data.sender) {
+        io.to(data.sender.toString()).emit("receiveMessage", populatedMessage);
+      }
 
       const notification = await Notification.create({
         receiver: data.receiver,
