@@ -164,12 +164,16 @@ router.get("/conversation/:itemId/:userId", protect, async (req, res) => {
         receiver: req.user._id,
         read: false,
       },
-      { read: true }
+      { read: true, seenAt: new Date() }
     );
+
+    const User = mongoose.model("User");
+    const otherUser = await User.findById(userId).select("name email profileImage lastSeen");
 
     res.json({
       conversationId: convo._id,
-      messages
+      messages,
+      otherUser
     });
   } catch (error) {
     console.error("Conversation error:", error);
@@ -262,7 +266,7 @@ router.put("/mark-read/:itemId/:senderId", protect, async (req, res) => {
           receiver: req.user._id,
           read: false,
         },
-        { read: true }
+        { read: true, seenAt: new Date() }
       );
     }
 

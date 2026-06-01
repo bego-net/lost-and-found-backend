@@ -204,15 +204,49 @@ io.on("connection", (socket) => {
     }
   });
 
+  /* MESSAGES SEEN */
+
+  socket.on("messagesSeen", async ({ conversationId, userId }) => {
+    try {
+      const Message = mongoose.model("Message");
+      await Message.updateMany(
+        {
+          conversation: conversationId,
+          sender: { $ne: userId },
+          read: false,
+        },
+        { $set: { read: true, seenAt: new Date() } }
+      );
+
+      io.to(conversationId).emit("messagesSeen", {
+        conversationId,
+        seenAt: new Date(),
+      });
+    } catch (err) {
+      console.error("Error setting messages seen via socket:", err);
+    }
+  });
+
   /* DISCONNECT */
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     console.log("User disconnected:", socket.id);
 
+    let disconnectedUserId = null;
     for (let [userId, socketId] of onlineUsers.entries()) {
       if (socketId === socket.id) {
+        disconnectedUserId = userId;
         onlineUsers.delete(userId);
         break;
+      }
+    }
+
+    if (disconnectedUserId) {
+      try {
+        const User = mongoose.model("User");
+        await User.findByIdAndUpdate(disconnectedUserId, { lastSeen: new Date() });
+      } catch (err) {
+        console.error("Error updating lastSeen:", err);
       }
     }
 
