@@ -281,12 +281,12 @@ router.put(
 ======================================================= */
 router.get("/profile/:id", async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("name email profileImage role createdAt");
+    const user = await User.findById(req.params.id).select("name profileImage role createdAt bio lastSeen");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
     const items = await Item.find({ user: req.params.id })
-      .populate("user", "name profileImage role email")
+      .populate("user", "name profileImage role")
       .sort({ createdAt: -1 });
     res.json({ user, items });
   } catch (err) {

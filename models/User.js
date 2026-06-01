@@ -37,6 +37,11 @@ const UserSchema = new mongoose.Schema({
     default: "user",
   },
 
+  bio: {
+    type: String,
+    default: "",
+  },
+
   isBanned: {
     type: Boolean,
     default: false,
