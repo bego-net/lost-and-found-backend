@@ -52,7 +52,9 @@ router.get("/search", async (req, res) => {
         { location: regex },
         { type: regex },
       ],
-    }).sort({ createdAt: -1 });
+    })
+      .populate("user", "name profileImage role email")
+      .sort({ createdAt: -1 });
 
     res.json({ items });
 
@@ -92,6 +94,7 @@ router.get("/", async (req, res) => {
     const skip = (page - 1) * limit;
 
     const items = await Item.find(queryObj)
+      .populate("user", "name profileImage role email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
@@ -117,7 +120,7 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const item = await Item.findById(req.params.id)
-      .populate("user", "name email");
+      .populate("user", "name profileImage role email");
 
     if (!item) {
       return res.status(404).json({ message: "Item not found" });

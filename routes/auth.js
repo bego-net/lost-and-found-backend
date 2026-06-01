@@ -275,4 +275,23 @@ router.put(
   uploadProfileImage
 );
 
+/* =======================================================
+   GET ANY USER'S PUBLIC PROFILE
+   GET /api/auth/profile/:id
+======================================================= */
+router.get("/profile/:id", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("name email profileImage role createdAt");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const items = await Item.find({ user: req.params.id })
+      .populate("user", "name profileImage role email")
+      .sort({ createdAt: -1 });
+    res.json({ user, items });
+  } catch (err) {
+    res.status(500).json({ message: "Server Error", error: err.message });
+  }
+});
+
 export default router;
