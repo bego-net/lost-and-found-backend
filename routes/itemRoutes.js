@@ -145,7 +145,7 @@ router.put("/:id", protect, itemUpload.array("images", 5), async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    if (item.user.toString() !== req.user._id.toString()) {
+    if (item.user.toString() !== req.user._id.toString() && req.user.role !== "admin") {
       return res.status(403).json({ message: "Unauthorized" });
     }
 
