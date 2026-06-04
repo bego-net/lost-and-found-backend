@@ -63,13 +63,29 @@ export const getAdminStats = async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
 
-    const totalLostItems = await Item.countDocuments({ type: "lost" });
-    const totalFoundItems = await Item.countDocuments({ type: "found" });
+    const totalLostItems = await Item.countDocuments({
+      $or: [
+        { status: "lost" },
+        { status: "open", type: "lost" }
+      ]
+    });
+    
+    const totalFoundItems = await Item.countDocuments({
+      $or: [
+        { status: "found" },
+        { status: "open", type: "found" }
+      ]
+    });
+
+    const claimedCount = await Item.countDocuments({ status: "claimed" });
+    const returnedCount = await Item.countDocuments({ status: "returned" });
 
     res.json({
       totalUsers,
       totalLostItems,
       totalFoundItems,
+      claimedCount,
+      returnedCount,
     });
   } catch (error) {
     res.status(500).json({ message: "Error fetching stats" });

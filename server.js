@@ -169,13 +169,14 @@ io.on("connection", (socket) => {
         .populate("receiver", "name email profileImage")
         .populate("item", "title images");
 
-      io.to(data.conversation).emit("receiveMessage", populatedMessage);
+      const target = io.to(data.conversation);
       if (data.receiver) {
-        io.to(data.receiver.toString()).emit("receiveMessage", populatedMessage);
+        target.to(data.receiver.toString());
       }
       if (data.sender) {
-        io.to(data.sender.toString()).emit("receiveMessage", populatedMessage);
+        target.to(data.sender.toString());
       }
+      target.emit("receiveMessage", populatedMessage);
 
       const notification = await Notification.create({
         receiver: data.receiver,

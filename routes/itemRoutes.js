@@ -69,7 +69,7 @@ router.get("/search", async (req, res) => {
 ===================================================== */
 router.get("/", async (req, res) => {
   try {
-    const { search, type, category, page = 1, limit = 50 } = req.query;
+    const { search, type, category, status, page = 1, limit = 50 } = req.query;
 
     const queryObj = {};
 
@@ -89,6 +89,12 @@ router.get("/", async (req, res) => {
 
     if (category) {
       queryObj.category = category;
+    }
+
+    if (status) {
+      queryObj.status = status;
+    } else {
+      queryObj.status = { $ne: "returned" };
     }
 
     const skip = (page - 1) * limit;
@@ -248,6 +254,70 @@ router.delete("/:id", protect, async (req, res) => {
 
   } catch (error) {
     console.error("Delete Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* =====================================================
+   CLAIM ITEM
+===================================================== */
+router.post("/:id/claim", protect, async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: "Item not found" });
+
+    item.status = "claimed";
+    await item.save();
+
+    res.json({ message: "Item claimed successfully", item });
+  } catch (error) {
+    console.error("Claim Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* =====================================================
+   MARK AS RETURNED
+===================================================== */
+router.post("/:id/return", protect, async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: "Item not found" });
+
+    // Only owner or admin can mark as returned
+    if (item.user.toString() !== req.user._id.toString() && req.user.role !== "admin") {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    item.status = "returned";
+    await item.save();
+
+    res.json({ message: "Item marked as returned", item });
+  } catch (error) {
+    console.error("Return Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* =====================================================
+   CONFIRM RECEIVED
+===================================================== */
+router.post("/:id/received", protect, async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: "Item not found" });
+
+    // Only owner can confirm receipt
+    if (item.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    item.status = "returned";
+    await item.save();
+
+    res.json({ message: "Item confirmed received", item });
+  } catch (error) {
+    console.error("Received Error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });

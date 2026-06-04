@@ -53,7 +53,7 @@ const ItemSchema = new mongoose.Schema({
 
   status: {
     type: String,
-    enum: ["open", "resolved"],
+    enum: ["open", "resolved", "lost", "found", "claimed", "returned"],
     default: "open"
   },
 
