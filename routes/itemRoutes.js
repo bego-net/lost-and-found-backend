@@ -5,6 +5,8 @@ import { protect } from "../middleware/authMiddleware.js";
 import upload from "../middleware/upload.js";
 import cloudUpload from "../middleware/cloudUpload.js";
 import { createItem, normalizeImagePath } from "../controllers/itemController.js";
+import { processItemImages } from "../services/visionService.js";
+import { getItemMatches, refreshItemMatches } from "../controllers/aiController.js";
 
 const router = express.Router();
 
@@ -141,6 +143,16 @@ router.get("/:id", async (req, res) => {
 });
 
 /* =====================================================
+   GET AI MATCHES FOR ITEM
+===================================================== */
+router.get("/:id/matches", getItemMatches);
+
+/* =====================================================
+   REFRESH AI MATCHES FOR ITEM
+===================================================== */
+router.post("/:id/refresh-matches", protect, refreshItemMatches);
+
+/* =====================================================
    UPDATE ITEM
 ===================================================== */
 router.put("/:id", protect, itemUpload.array("images", 5), async (req, res) => {
@@ -164,9 +176,18 @@ router.put("/:id", protect, itemUpload.array("images", 5), async (req, res) => {
     delete updateData.images;
 
     if (req.files && req.files.length > 0) {
-      updateData.images = req.files
+      const newImages = req.files
         .map((file) => toPublicImagePath(file?.path))
         .filter((url) => typeof url === "string" && url.length > 0);
+
+      updateData.images = newImages;
+
+      try {
+        const newEmbeddings = await processItemImages(newImages);
+        updateData.imageEmbeddings = newEmbeddings;
+      } catch (visionErr) {
+        console.error("Vision Service Error during item update:", visionErr);
+      }
     }
 
     const updatedItem = await Item.findByIdAndUpdate(req.params.id, updateData, {

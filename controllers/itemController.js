@@ -2,6 +2,7 @@ import path from "path";
 import Item from "../models/Item.js";
 import Notification from "../models/Notification.js";
 import { findMatches } from "./aiController.js";
+import { processItemImages } from "../services/visionService.js";
 
 function toPublicPath(filePath) {
   if (!filePath) return null;
@@ -72,6 +73,7 @@ export const createItem = async (req, res) => {
           .filter((url) => typeof url === "string" && url.length > 0)
       : [];
 
+    // 1. Create Item in DB immediately for fast API response
     const newItem = await Item.create({
       title,
       description,
@@ -81,60 +83,70 @@ export const createItem = async (req, res) => {
       latitude: parseNumber(latitude),
       longitude: parseNumber(longitude),
       images: imageUrls,
+      imageEmbeddings: [],
       dateLostOrFound: parsedDate || undefined,
       user: req.user._id,
     });
 
-    let matches = [];
-    let notifications = [];
-
-    try {
-      const oppositeType = newItem.type === "lost" ? "found" : "lost";
-
-      const candidateItems = await Item.find({
-        type: oppositeType,
-        category: newItem.category,
-      });
-
-      const result = await findMatches(newItem.toObject(), candidateItems);
-
-      matches = result?.matches || [];
-      notifications = result?.notifications || [];
-    } catch (aiError) {
-      console.error("AI Matching Error:", aiError);
-    }
-
-    for (const n of notifications) {
-      const notification = await Notification.create({
-        receiver: n.receiver,
-        sender: req.user._id,
-        item: newItem._id,
-        type: "match",
-        isRead: false,
-      });
-
-      const populatedNotification = await Notification.findById(
-        notification._id
-      )
-        .populate("sender", "name profileImage")
-        .populate("item", "title images");
-
-      const io = req.app.get("io");
-      const onlineUsers = req.app.get("onlineUsers");
-
-      const receiverSocket = onlineUsers?.get(n.receiver?.toString());
-
-      if (io && receiverSocket) {
-        io.to(receiverSocket).emit("newNotification", populatedNotification);
-      }
-    }
-
+    // 2. Return HTTP 201 Created immediately to the user
     res.status(201).json({
       message: "Item posted successfully",
       item: newItem,
-      matches,
-      showNotification: notifications.length > 0,
-      notifications,
+    });
+
+    // 3. Asynchronously generate embeddings, run hybrid matching, & send socket notifications in background
+    setImmediate(async () => {
+      try {
+        // Step A: Generate CLIP embeddings for uploaded images
+        if (imageUrls.length > 0) {
+          console.log(`[ItemController] Generating embeddings for ${imageUrls.length} images...`);
+          const imageEmbeddings = await processItemImages(imageUrls);
+          if (imageEmbeddings.length > 0) {
+            newItem.imageEmbeddings = imageEmbeddings;
+            await newItem.save();
+            console.log(`[ItemController] Stored ${imageEmbeddings.length} embeddings for item ${newItem._id}`);
+          } else {
+            console.warn(`[ItemController] No embeddings generated for item ${newItem._id} — vision service may be offline`);
+          }
+        }
+
+        // Step B: Reload item from DB to ensure fresh state with embeddings
+        const freshItem = await Item.findById(newItem._id).lean();
+        if (!freshItem) {
+          console.error(`[ItemController] Item ${newItem._id} not found after save`);
+          return;
+        }
+
+        // Step C: Run hybrid matching
+        console.log(`[ItemController] Running hybrid matching for "${freshItem.title}"...`);
+        const result = await findMatches(freshItem);
+        const notifications = result?.notifications || [];
+        console.log(`[ItemController] Matching complete: ${result?.matches?.length || 0} matches, ${notifications.length} notifications`);
+
+        const io = req.app.get("io");
+        const onlineUsers = req.app.get("onlineUsers");
+
+        for (const n of notifications) {
+          const notification = await Notification.create({
+            receiver: n.receiver,
+            sender: req.user._id,
+            item: newItem._id,
+            type: "match",
+            isRead: false,
+          });
+
+          const populatedNotification = await Notification.findById(notification._id)
+            .populate("sender", "name profileImage")
+            .populate("item", "title images");
+
+          const receiverSocket = onlineUsers?.get(n.receiver?.toString());
+          if (io && receiverSocket) {
+            io.to(receiverSocket).emit("newNotification", populatedNotification);
+          }
+        }
+      } catch (bgError) {
+        console.error("[ItemController] Background AI processing error:", bgError);
+      }
     });
   } catch (error) {
     console.error("Create Item Error:", error);
