@@ -25,9 +25,19 @@ const ItemSchema = new mongoose.Schema({
   },
 
   images: {
-  type: [String],
-  default: [],
-},
+    type: [String],
+    default: [],
+  },
+
+  imageEmbeddings: [
+    {
+      imageUrl: { type: String, required: true },
+      embedding: { type: [Number], default: [] },
+      modelName: { type: String, default: "openai/clip-vit-base-patch32" },
+      modelVersion: { type: String, default: "v1" },
+      createdAt: { type: Date, default: Date.now },
+    },
+  ],
 
 
   location: {
