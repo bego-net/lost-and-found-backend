@@ -1,100 +1,125 @@
-import { compareItems } from "../services/aiService.js";
+import Item from "../models/Item.js";
+import Match from "../models/Match.js";
+import { computeAndStoreMatches } from "../services/hybridMatcher.js";
+import { matchCache } from "../services/cacheService.js";
 
-export const findMatches = async (newItem, itemsToCompare) => {
+/**
+ * Perform hybrid vision + metadata matching on a new item and persist candidate matches
+ */
+export const findMatches = async (newItem) => {
   try {
-    if (!itemsToCompare || !itemsToCompare.length) {
-      return { matches: [], notifications: [] };
-    }
-
-    /* =====================================
-       STEP 1: Filter by category first
-       This reduces AI workload
-    ===================================== */
-
-    const filteredItems = itemsToCompare.filter(
-      (item) =>
-        item.category === newItem.category &&
-        item.user.toString() !== newItem.user.toString()
-    );
-
-    if (!filteredItems.length) {
-      return { matches: [], notifications: [] };
-    }
-
-    /* =====================================
-       STEP 2: Build text for AI
-    ===================================== */
-
-    const aiResults = await compareItems(newItem, filteredItems);
-
-    console.log("AI Results:", aiResults);
-
-    if (!Array.isArray(aiResults)) {
-      return { matches: [], notifications: [] };
-    }
-
-    let matches = [];
-    let notifications = [];
-
-    /* =====================================
-       STEP 3: Process AI similarity results
-    ===================================== */
-
-    aiResults.forEach((result) => {
-
-      const matchedItem = filteredItems[result.index];
-
-      if (!matchedItem) return;
-
-      /* -------------------------
-         Suggestion threshold
-      ------------------------- */
-      if (result.similarity >= 60) {
-
-        matches.push({
-          item: matchedItem,
-          similarity: result.similarity,
-        });
-
-      }
-
-      /* -------------------------
-         Notification threshold
-      ------------------------- */
-      if (result.similarity >= 80) {
-
-        notifications.push({
-          receiver: matchedItem.user,
-          item: newItem._id,
-          similarity: result.similarity,
-        });
-
-      }
-
-    });
-
-    /* =====================================
-       STEP 4: Sort best matches
-    ===================================== */
-
-    matches.sort((a, b) => b.similarity - a.similarity);
-
-    /* =====================================
-       STEP 5: Limit suggestions
-    ===================================== */
-
-    matches = matches.slice(0, 5);
-
-    console.log("Matches Found:", matches);
-    console.log("Notification Matches:", notifications);
-
-    return { matches, notifications };
-
+    const result = await computeAndStoreMatches(newItem);
+    matchCache.delete(`matches_${newItem._id}`);
+    return result;
   } catch (error) {
-
-    console.error("Match error:", error);
-
+    console.error("[AiController] findMatches Error:", error);
     return { matches: [], notifications: [] };
+  }
+};
 
+/**
+ * Controller: GET /api/items/:id/matches
+ * Retrieves stored AI-suggested matches for an item (utilizes Memory Cache)
+ */
+export const getItemMatches = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cacheKey = `matches_${id}`;
+
+    // Check memory cache first
+    const cachedResponse = matchCache.get(cacheKey);
+    if (cachedResponse) {
+      return res.json(cachedResponse);
+    }
+
+    const item = await Item.findById(id).lean();
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    // Fetch stored matches from Match collection
+    let matches = await Match.find({ sourceItem: id })
+      .populate({
+        path: "targetItem",
+        populate: { path: "user", select: "name profileImage email" },
+      })
+      .sort({ overallScore: -1 })
+      .limit(10)
+      .lean();
+
+    // If no stored matches exist yet, run on-demand calculation
+    if (!matches || matches.length === 0) {
+      await computeAndStoreMatches(item);
+      matches = await Match.find({ sourceItem: id })
+        .populate({
+          path: "targetItem",
+          populate: { path: "user", select: "name profileImage email" },
+        })
+        .sort({ overallScore: -1 })
+        .limit(10)
+        .lean();
+    }
+
+    // Format response
+    const formattedMatches = matches
+      .filter((m) => m.targetItem != null)
+      .map((m) => ({
+        _id: m._id,
+        item: m.targetItem,
+        similarity: m.overallScore,
+        scores: {
+          overallScore: m.overallScore,
+          visionScore: m.visionScore,
+          textScore: m.textScore,
+          categoryScore: m.categoryScore,
+          locationScore: m.locationScore,
+          dateScore: m.dateScore,
+        },
+        matchedAt: m.createdAt,
+      }));
+
+    const responsePayload = {
+      itemId: id,
+      totalMatches: formattedMatches.length,
+      matches: formattedMatches,
+    };
+
+    // Store in cache for 10 minutes
+    matchCache.set(cacheKey, responsePayload, 600000);
+
+    res.json(responsePayload);
+  } catch (error) {
+    console.error("[AiController] getItemMatches Error:", error);
+    res.status(500).json({ message: "Failed to retrieve matches", error: error.message });
+  }
+};
+
+/**
+ * Controller: POST /api/items/:id/refresh-matches
+ * Re-computes hybrid AI matches for an item on demand and flushes cache
+ */
+export const refreshItemMatches = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const item = await Item.findById(id);
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    const { matches } = await computeAndStoreMatches(item);
+
+    // Invalidate cache
+    matchCache.delete(`matches_${id}`);
+
+    res.json({
+      message: "Matches recalculated successfully",
+      itemId: id,
+      totalMatches: matches.length,
+      matches,
+    });
+  } catch (error) {
+    console.error("[AiController] refreshItemMatches Error:", error);
+    res.status(500).json({ message: "Failed to refresh matches", error: error.message });
   }
 };
