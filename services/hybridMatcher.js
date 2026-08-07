@@ -3,6 +3,25 @@ import Match from "../models/Match.js";
 import { rankImageCandidates } from "./visionService.js";
 
 /**
+ * Category pairs that are clearly unrelated.
+ * Matching across these pairs receives a small penalty (not full exclusion).
+ */
+const UNRELATED_CATEGORY_PAIRS = new Set([
+  "wallet|glasses", "glasses|wallet",
+  "charger|headset", "headset|charger",
+  "wallet|headset", "headset|wallet",
+  "charger|glasses", "glasses|charger",
+  "keys|glasses", "glasses|keys",
+  "keys|headset", "headset|keys",
+  "phone|glasses", "glasses|phone",
+  "laptop|glasses", "glasses|laptop",
+  "bag|glasses", "glasses|bag",
+  "wallet|charger", "charger|wallet",
+]);
+
+const CATEGORY_MISMATCH_PENALTY = 0.85; // 15% penalty for unrelated categories
+
+/**
  * Text token similarity using Jaccard index
  */
 function quickTextSimilarity(text1 = "", text2 = "") {
@@ -92,17 +111,45 @@ function hasValidEmbeddings(item) {
 }
 
 /**
+ * L2-normalize an embedding vector.
+ * Returns a new array where ||v|| = 1.
+ * If the vector has zero magnitude, returns it unchanged.
+ */
+function normalizeEmbedding(embedding) {
+  const norm = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+  if (norm === 0) return embedding;
+  return embedding.map((val) => val / norm);
+}
+
+/**
+ * Determine if two categories are unrelated (deserving a small penalty).
+ */
+function areCategoriesUnrelated(catA, catB) {
+  if (!catA || !catB) return false;
+  const key = `${catA.toLowerCase()}|${catB.toLowerCase()}`;
+  return UNRELATED_CATEGORY_PAIRS.has(key);
+}
+
+/**
  * Main Hybrid Matcher calculation engine
  *
- * Scoring weights when vision is available:
- *   Vision: 55%  (primary signal — identical images should dominate)
- *   Text:   20%  (title + description Jaccard similarity)
- *   Category: 10%
- *   Location: 10%
- *   Date:     5%
+ * Scoring formula when vision is available:
+ *   Final Score = (Image Similarity × 0.60) + (Text Similarity × 0.40)
+ *
+ *   Where Text Similarity is a composite of:
+ *     - Title+Desc Jaccard:  50% of text bucket
+ *     - Category match:      25% of text bucket
+ *     - Location proximity:  15% of text bucket
+ *     - Date proximity:      10% of text bucket
+ *
+ *   A small penalty (×0.85) is applied for unrelated category pairs
+ *   (e.g. Wallet↔Glasses) but they are NOT excluded.
  *
  * Scoring weights without vision (text-only fallback):
  *   Text: 45%, Category: 25%, Location: 20%, Date: 10%
+ *
+ * Embeddings are L2-normalized locally before comparison.
+ * Identical images will always rank first due to the 60% image weight.
  *
  * @param {Object} newItem Target item
  * @param {Array<Object>} candidates Candidate items from database
@@ -113,17 +160,20 @@ export async function computeHybridMatches(newItem, candidates = []) {
     return { matches: [], notifications: [] };
   }
 
-  // Extract CLIP target embeddings
+  // Extract CLIP target embeddings and L2-normalize them locally
   const targetEmbeddings = (newItem.imageEmbeddings || [])
     .map((e) => e.embedding)
-    .filter((emb) => Array.isArray(emb) && emb.length > 0);
+    .filter((emb) => Array.isArray(emb) && emb.length > 0)
+    .map((emb) => normalizeEmbedding(emb));
 
   // Build candidate embedding list (track which candidates actually have embeddings)
+  // Normalize all candidate embeddings as well for consistent cosine comparison
   const candidateHasEmbeddings = new Set();
   const candidateEmbeddingsList = candidates.map((c) => {
     const embeddings = (c.imageEmbeddings || [])
       .map((e) => e.embedding)
-      .filter((emb) => Array.isArray(emb) && emb.length > 0);
+      .filter((emb) => Array.isArray(emb) && emb.length > 0)
+      .map((emb) => normalizeEmbedding(emb));
 
     if (embeddings.length > 0) {
       candidateHasEmbeddings.add(c._id.toString());
@@ -192,43 +242,64 @@ export async function computeHybridMatches(newItem, candidates = []) {
 
     // Dynamic Weighting Strategy
     let overallScore = 0;
+    let imageSimilarity = 0;
+    let compositeTextSimilarity = 0;
+
     if (useVisionWeights) {
-      // Vision-dominant weights: 55% Vision, 20% Text, 10% Category, 10% Location, 5% Date
+      // =====================================================
+      // HYBRID FORMULA: 60% Image + 40% Text
+      // =====================================================
+      imageSimilarity = visionScore;
+
+      // Composite text similarity includes category, location, date
+      // Internal text bucket weights: 50% text, 25% category, 15% location, 10% date
+      compositeTextSimilarity =
+        textScore * 0.50 +
+        categoryScore * 0.25 +
+        locationScore * 0.15 +
+        dateScore * 0.10;
+
       overallScore =
-        visionScore * 0.55 +
-        textScore * 0.20 +
-        categoryScore * 0.10 +
-        locationScore * 0.10 +
-        dateScore * 0.05;
+        imageSimilarity * 0.60 +
+        compositeTextSimilarity * 0.40;
+
+      // Apply small penalty for clearly unrelated categories (not full exclusion)
+      if (areCategoriesUnrelated(newItem.category, candidate.category)) {
+        overallScore *= CATEGORY_MISMATCH_PENALTY;
+        console.log(
+          `[HybridMatcher] ⚠️ Category penalty applied: "${newItem.category}" ↔ "${candidate.category}" (×${CATEGORY_MISMATCH_PENALTY})`
+        );
+      }
     } else {
       // Text-only fallback weights: 45% Text, 25% Category, 20% Location, 10% Date
-      overallScore =
+      compositeTextSimilarity =
         textScore * 0.45 +
         categoryScore * 0.25 +
         locationScore * 0.20 +
         dateScore * 0.10;
+      overallScore = compositeTextSimilarity;
     }
 
     const overallPercentage = Math.round(overallScore * 100);
 
-    // Debug logging for each candidate match
+    // =====================================================
+    // DEBUG LOGS: Image Similarity, Text Similarity, Final Score
+    // =====================================================
     console.log(
-      `[HybridMatcher] ${candId.slice(-6)} | ` +
-      `Overall: ${overallPercentage}% | ` +
-      `Vision: ${Math.round(visionScore * 100)}%${useVisionWeights ? "" : " (N/A)"} | ` +
-      `Text: ${Math.round(textScore * 100)}% (title=${Math.round(titleScore * 100)}% desc=${Math.round(descScore * 100)}%) | ` +
-      `Cat: ${Math.round(categoryScore * 100)}% | ` +
-      `Loc: ${Math.round(locationScore * 100)}% | ` +
-      `Date: ${Math.round(dateScore * 100)}% | ` +
-      `Mode: ${useVisionWeights ? "VISION" : "TEXT-ONLY"}`
+      `[HybridMatcher] 🔍 ${candId.slice(-6)} | ` +
+      `FINAL: ${overallPercentage}% | ` +
+      `Image Sim: ${Math.round(imageSimilarity * 100)}%${useVisionWeights ? " (×0.60)" : " (N/A)"} | ` +
+      `Text Sim: ${Math.round(compositeTextSimilarity * 100)}%${useVisionWeights ? " (×0.40)" : " (×1.00)"} | ` +
+      `[title=${Math.round(titleScore * 100)}% desc=${Math.round(descScore * 100)}% cat=${Math.round(categoryScore * 100)}% loc=${Math.round(locationScore * 100)}% date=${Math.round(dateScore * 100)}%] | ` +
+      `Mode: ${useVisionWeights ? "VISION+TEXT (60/40)" : "TEXT-ONLY"}`
     );
 
     results.push({
       candidate,
       scores: {
         overallScore: overallPercentage,
-        visionScore: Math.round(visionScore * 100),
-        textScore: Math.round(textScore * 100),
+        visionScore: Math.round(imageSimilarity * 100),
+        textScore: Math.round(compositeTextSimilarity * 100),
         titleScore: Math.round(titleScore * 100),
         descriptionScore: Math.round(descScore * 100),
         categoryScore: Math.round(categoryScore * 100),
@@ -241,10 +312,13 @@ export async function computeHybridMatches(newItem, candidates = []) {
   // Filter candidates with score >= 30%
   const filtered = results.filter((res) => res.scores.overallScore >= 30);
 
-  // Sort descending by overallScore
+  // Sort descending by final hybrid score
   filtered.sort((a, b) => b.scores.overallScore - a.scores.overallScore);
 
-  console.log(`[HybridMatcher] ${filtered.length}/${results.length} candidates above 30% threshold`);
+  console.log(
+    `[HybridMatcher] ✅ ${filtered.length}/${results.length} candidates above 30% threshold | ` +
+    `Top match: ${filtered.length > 0 ? filtered[0].scores.overallScore + "%" : "none"}`
+  );
 
   return filtered;
 }
